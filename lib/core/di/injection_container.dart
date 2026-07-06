@@ -59,4 +59,5 @@ class InjectionContainer {
   static Future<void> init() async {
     await _local.getAllSessions();
   }
+
 }

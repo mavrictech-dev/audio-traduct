@@ -143,12 +143,12 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
     _configureSession();
   }
 
-  void selectOutput(String id) {
+  Future<void> selectOutput(String id) async {
     state = state.copyWith(
       selectedOutputId: id,
       hasManualOutputSelection: true,
     );
-    _routeOutputById(id);
+    await _routeOutputById(id);
   }
 
   /// Rutea el audio al dispositivo seleccionado vía nativo.
@@ -175,6 +175,24 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
   /// Refresca la lista de dispositivos (llamar después de conectar BT).
   Future<void> refreshDevices() async {
     await _loadConnectedBT();
+  }
+
+  Future<void> selectIntegratedOutput() async {
+    final integrated = state.devices.cast<AudioDevice?>().firstWhere(
+      (d) => d != null && d.isOutput && d.typeLabel == 'Integrado',
+      orElse: () => null,
+    );
+
+    if (integrated != null) {
+      await selectOutput(integrated.id);
+      return;
+    }
+
+    state = state.copyWith(
+      selectedOutputId: 'builtin-speaker',
+      hasManualOutputSelection: true,
+    );
+    await _routeOutput(deviceName: 'SM-A346M', deviceId: 'builtin-speaker');
   }
 
   void _updateFromSet(Set<a.AudioDevice> set) {

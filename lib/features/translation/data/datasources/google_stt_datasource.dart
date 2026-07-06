@@ -4,16 +4,7 @@ import 'dart:typed_data';
 import 'package:audio_traductor/core/constants/api_constants.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:speech_to_text/speech_recognition_result.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 
-/// DataSource para reconocimiento de voz.
-///
-/// Responsabilidad: escuchar el micrófono y devolver texto transcrito.
-///
-/// [RealSttDatasource] usa el motor de reconocimiento nativo del dispositivo
-/// (Android SpeechRecognizer / iOS SFSpeechRecognizer) — NO requiere
-/// credenciales de cloud y funciona offline.
 abstract class SttDatasource {
   Stream<SttResult> startStreaming({
     required Stream<List<int>> audioStream,
@@ -23,7 +14,6 @@ abstract class SttDatasource {
   Future<void> stop();
 }
 
-/// Resultado del STT.
 class SttResult {
   final String transcript;
   final bool isFinal;
@@ -36,132 +26,21 @@ class SttResult {
   });
 }
 
-/// Implementación REAL con [speech_to_text] nativo del dispositivo.
+/// Google Cloud Speech-to-Text con segmentación manual por silencio.
 ///
-/// Usa el reconocimiento de voz on-device (Android/iOS).
-/// Maneja el micrófono internamente — el parámetro [audioStream] se ignora.
-class RealSttDatasource implements SttDatasource {
-  final _speech = SpeechToText();
-  StreamController<SttResult>? _controller;
-  bool _stopping = false;
-  String _languageCode = 'es_ES';
-
-  @override
-  Stream<SttResult> startStreaming({
-    required Stream<List<int>> audioStream,
-    required String languageCode,
-  }) async* {
-    _controller = StreamController<SttResult>.broadcast();
-    _stopping = false;
-    _languageCode = _mapLanguage(languageCode);
-
-    final available = await _speech.initialize();
-
-    if (!available) {
-      _controller?.addError('Reconocimiento de voz no disponible');
-      yield* _controller!.stream;
-      return;
-    }
-
-    // Primera escucha
-    _startListening();
-
-    yield* _controller!.stream;
-  }
-
-  void _startListening() {
-    _speech.listen(
-      onResult: (SpeechRecognitionResult result) {
-        if (result.recognizedWords.isEmpty) return;
-        _controller?.add(SttResult(
-          transcript: result.recognizedWords,
-          isFinal: result.finalResult,
-          confidence: 1.0,
-        ));
-      },
-      localeId: _languageCode,
-      listenOptions: SpeechListenOptions(
-        listenMode: ListenMode.search,
-        partialResults: true,
-      ),
-    ).then((_) {
-      // Sesión terminó naturalmente — reiniciar con delay mínimo
-      if (!_stopping) {
-        Future.delayed(const Duration(milliseconds: 300), _startListening);
-      }
-    }).catchError((_) {
-      // Error en la sesión — reintentar
-      if (!_stopping) {
-        Future.delayed(const Duration(milliseconds: 500), _startListening);
-      }
-    });
-  }
-
-  @override
-  Future<void> stop() async {
-    _stopping = true;
-    await _speech.stop();
-    await _controller?.close();
-    _controller = null;
-  }
-
-  /// Mapea códigos ISO cortos a locales completos.
-  String _mapLanguage(String code) {
-    const map = {
-      'es': 'es_ES',
-      'en': 'en_US',
-      'pt': 'pt_BR',
-      'fr': 'fr_FR',
-      'de': 'de_DE',
-      'it': 'it_IT',
-      'ja': 'ja_JP',
-      'zh': 'zh_CN',
-      'ko': 'ko_KR',
-      'ru': 'ru_RU',
-      'ar': 'ar_SA',
-      'nl': 'nl_NL',
-    };
-    return map[code] ?? 'en_US';
-  }
-}
-
-/// Implementación mock — genera frases predeterminadas (legado).
-class MockSttDatasource implements SttDatasource {
-  final _phrases = <String>[
-    'Buenos días a todos',
-    'Hoy vamos a hablar sobre',
-    'la importancia de la traducción',
-    'en tiempo real para conferencias',
-    'Muchas gracias por su atención',
-  ];
-
-  @override
-  Stream<SttResult> startStreaming({
-    required Stream<List<int>> audioStream,
-    required String languageCode,
-  }) async* {
-    for (final phrase in _phrases) {
-      await Future.delayed(const Duration(milliseconds: 2000));
-      yield SttResult(transcript: phrase, isFinal: false);
-      await Future.delayed(const Duration(milliseconds: 500));
-      yield SttResult(transcript: phrase, isFinal: true, confidence: 0.95);
-    }
-  }
-
-  @override
-  Future<void> stop() async {}
-}
-
-/// Implementación con Google Cloud Speech-to-Text API.
-/// Captura audio con [record] package y detecta pausas para enviar párrafos.
+/// Flujo:
+/// - el mic del celular sigue capturando audio nativo
+/// - 600ms de pausa cierran el párrafo
+/// - ese bloque se manda a Google STT
+/// - la app sigue escuchando mientras traduce/reproduce el anterior
 class GoogleSttDatasource implements SttDatasource {
-  static const _silenceThresholdMs = 400;
-  static const _rmsThreshold = 1000;
+  static const _silenceThresholdMs = 600;
+  static const _rmsThreshold = 700;
   static const _audioChannel = MethodChannel('com.audiotraductor/audio');
   static const _micChannel = EventChannel('com.audiotraductor/mic');
 
   final String _apiKey;
-  final http.Client _http = http.Client(); // persistente para reusar conexión
+  final http.Client _http = http.Client();
   StreamSubscription<List<int>>? _micSub;
   StreamController<SttResult>? _controller;
   bool _stopping = false;
@@ -187,13 +66,10 @@ class GoogleSttDatasource implements SttDatasource {
     _recognitionQueue = null;
 
     try {
-      // 1. Forzar mic del celular (también guarda comm device antes de limpiar)
       await _audioChannel.invokeMethod('forceBuiltinMic');
-      // 2. Esperar que SCO se desconecte
       await Future.delayed(const Duration(milliseconds: 150));
-
-      // 3. Iniciar grabación nativa — mic del celular (sin comm device)
       await _audioChannel.invokeMethod('startRecording');
+
       final stream = _micChannel.receiveBroadcastStream().map<List<int>>((event) {
         if (event is Uint8List) return event;
         if (event is List<int>) return event;
@@ -201,17 +77,6 @@ class GoogleSttDatasource implements SttDatasource {
         return const <int>[];
       });
 
-      // 4. NO restauramos output acá.
-      //
-      // En modo "Micrófono (voz directa)", el flujo nativo usa startRecording()
-      // sin restoreOutput() y mantiene correctamente:
-      //   - entrada: micrófono interno del celular
-      //   - salida: dispositivo BT seleccionado
-      //
-      // En el flujo de traducción, restoreOutput() termina reactivando rutas
-      // Bluetooth/HFP y Android vuelve a tomar el mic del dispositivo BT.
-      // Para forzar SIEMPRE el mic interno, dejamos la misma estrategia que
-      // en voz directa: startRecording() y nada más.
       _micSub = stream.listen(
         _onAudioData,
         onError: (e) => _controller?.addError('Mic: $e'),
@@ -227,7 +92,6 @@ class GoogleSttDatasource implements SttDatasource {
     if (_stopping) return;
     _buffer.addAll(chunk);
 
-    // Media de valores absolutos: más robusta que pico para detectar silencio
     final mav = _calcMav(chunk);
     final isSpeech = mav > _rmsThreshold;
     final samplesInChunk = chunk.length ~/ 2;
@@ -239,14 +103,12 @@ class GoogleSttDatasource implements SttDatasource {
       _silenceSamples += samplesInChunk;
     }
 
-    // ¿400ms de silencio después de hablar?
     final silenceMs = _silenceSamples * 1000 ~/ 16000;
     if (_hadSpeech && silenceMs >= _silenceThresholdMs) {
       _enqueueRecognizeBatch();
     }
   }
 
-  /// Media de valores absolutos para PCM 16-bit mono.
   double _calcMav(List<int> bytes) {
     var sum = 0;
     for (var i = 0; i < bytes.length - 1; i += 2) {
@@ -287,8 +149,9 @@ class GoogleSttDatasource implements SttDatasource {
             'encoding': 'LINEAR16',
             'sampleRateHertz': 16000,
             'languageCode': _mapLanguage(_languageCode),
-            'model': 'command_and_search',
+            'model': 'latest_long',
             'enableAutomaticPunctuation': true,
+            'maxAlternatives': 1,
           },
           'audio': {'content': base64Audio},
         }),
@@ -305,19 +168,27 @@ class GoogleSttDatasource implements SttDatasource {
       final results = data['results'] as List?;
       if (results == null || results.isEmpty) return;
 
-      final result = results.last as Map<String, dynamic>;
-      final alternatives = result['alternatives'] as List?;
-      if (alternatives == null || alternatives.isEmpty) return;
+      final transcripts = <String>[];
+      double confidence = 1.0;
 
-      final transcript = (alternatives.first as Map)['transcript'] as String?;
-      if (transcript == null || transcript.isEmpty) return;
+      for (final item in results) {
+        final result = item as Map<String, dynamic>;
+        final alternatives = result['alternatives'] as List?;
+        if (alternatives == null || alternatives.isEmpty) continue;
+        final first = alternatives.first as Map;
+        final transcript = (first['transcript'] as String?)?.trim();
+        if (transcript != null && transcript.isNotEmpty) {
+          transcripts.add(transcript);
+        }
+        confidence = ((first['confidence'] as num?)?.toDouble() ?? confidence);
+      }
 
-      final confidence =
-          ((alternatives.first as Map)['confidence'] as num?)?.toDouble() ?? 1.0;
+      final finalTranscript = transcripts.join(' ').trim();
+      if (finalTranscript.isEmpty || _stopping) return;
 
       _controller?.add(SttResult(
-        transcript: transcript,
-        isFinal: result['isFinal'] as bool? ?? true,
+        transcript: finalTranscript,
+        isFinal: true,
         confidence: confidence,
       ));
     } catch (e) {
@@ -341,10 +212,18 @@ class GoogleSttDatasource implements SttDatasource {
 
   String _mapLanguage(String code) {
     const map = {
-      'es': 'es-ES', 'en': 'en-US', 'pt': 'pt-BR',
-      'fr': 'fr-FR', 'de': 'de-DE', 'it': 'it-IT',
-      'ja': 'ja-JP', 'zh': 'zh-CN', 'ko': 'ko-KR',
-      'ru': 'ru-RU', 'ar': 'ar-SA', 'nl': 'nl-NL',
+      'es': 'es-ES',
+      'en': 'en-US',
+      'pt': 'pt-BR',
+      'fr': 'fr-FR',
+      'de': 'de-DE',
+      'it': 'it-IT',
+      'ja': 'ja-JP',
+      'zh': 'zh-CN',
+      'ko': 'ko-KR',
+      'ru': 'ru-RU',
+      'ar': 'ar-SA',
+      'nl': 'nl-NL',
     };
     return map[code] ?? 'en-US';
   }

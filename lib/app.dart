@@ -83,50 +83,58 @@ class _MainShellState extends ConsumerState<MainShell> with WidgetsBindingObserv
         : AppTheme.lightGradient;
     final currentIndex = ref.watch(tabIndexProvider);
 
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: gradientColors,
+    return PopScope(
+      canPop: currentIndex == 0,
+      onPopInvoked: (didPop) {
+        if (!didPop && currentIndex != 0) {
+          ref.read(tabIndexProvider.notifier).state = 0;
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: gradientColors,
+          ),
         ),
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: IndexedStack(
-          index: currentIndex,
-          children: _screens,
-        ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: currentIndex,
-          onDestinationSelected: (index) {
-            // Pausar traducción si se sale de la pestaña Traductor
-            if (currentIndex == 0 && index != 0) {
-              ref.read(translationProvider.notifier).stopTranslation();
-            }
-            ref.read(tabIndexProvider.notifier).state = index;
-            // Refrescar historial cada vez que se entra a la pestaña
-            if (index == 1) {
-              ref.invalidate(historyProvider);
-            }
-          },
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.translate_outlined),
-              selectedIcon: Icon(Icons.translate),
-              label: 'Traductor',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.history_outlined),
-              selectedIcon: Icon(Icons.history),
-              label: 'Historial',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
-              label: 'Ajustes',
-            ),
-          ],
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: IndexedStack(
+            index: currentIndex,
+            children: _screens,
+          ),
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: currentIndex,
+            onDestinationSelected: (index) {
+              // Pausar traducción si se sale de la pestaña Traductor
+              if (currentIndex == 0 && index != 0) {
+                ref.read(translationProvider.notifier).stopTranslation();
+              }
+              ref.read(tabIndexProvider.notifier).state = index;
+              // Refrescar historial cada vez que se entra a la pestaña
+              if (index == 1) {
+                ref.invalidate(historyProvider);
+              }
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.translate_outlined),
+                selectedIcon: Icon(Icons.translate),
+                label: 'Traductor',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.history_outlined),
+                selectedIcon: Icon(Icons.history),
+                label: 'Historial',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: 'Ajustes',
+              ),
+            ],
+          ),
         ),
       ),
     );

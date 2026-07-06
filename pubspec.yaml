@@ -27,7 +27,6 @@ dependencies:
   audio_session: ^0.1.25
   record: ^6.2.0
   just_audio: ^0.9.42
-  speech_to_text: ^7.0.0
   flutter_tts: ^4.2.0
 
   # ── Local Storage ──

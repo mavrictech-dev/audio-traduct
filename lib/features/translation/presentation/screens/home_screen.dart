@@ -240,15 +240,20 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   ),
                   const Spacer(),
-                  SizedBox(
-                    height: 28,
-                    child: Switch(
-                      value: state.micMode,
-                      onChanged: state.isStreaming
-                          ? null
-                          : (v) => ref.read(translationProvider.notifier).setMicMode(v),
-                    ),
-                  ),
+                   SizedBox(
+                     height: 28,
+                     child: Switch(
+                       value: state.micMode,
+                       onChanged: state.isStreaming
+                           ? null
+                           : (v) async {
+                               if (v) {
+                                 await ref.read(audioDevicesProvider.notifier).selectIntegratedOutput();
+                               }
+                               ref.read(translationProvider.notifier).setMicMode(v);
+                             },
+                     ),
+                   ),
                 ],
               ),
             ),
@@ -302,7 +307,7 @@ class HomeScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 24),
                         Text(
-                          'Se necesita internet solo esta vez.\nLuego funcionará sin conexión.',
+                          'Descargando modelos para los idiomas seleccionados.',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                           ),
@@ -311,8 +316,9 @@ class HomeScreen extends ConsumerWidget {
                       ],
                     ),
                   ),
-                ),
               ),
+            ),
+
 
       // ── Botón de grabación ──
             if (state.status != TranslationStatus.downloadingModels)
@@ -556,7 +562,7 @@ class _SessionPickerSheetState extends ConsumerState<_SessionPickerSheet> {
 // ── Tarjeta de párrafo en vivo ──────────────────────────────────
 
 /// Lista de los últimos 4 párrafos ocupando el espacio disponible.
-class _LiveParagraphs extends StatelessWidget {
+class _LiveParagraphs extends StatefulWidget {
   final List<TranslationParagraph> paragraphs;
   final String? playingId;
   final VoidCallback onTap;
@@ -568,21 +574,53 @@ class _LiveParagraphs extends StatelessWidget {
   });
 
   @override
+  State<_LiveParagraphs> createState() => _LiveParagraphsState();
+}
+
+class _LiveParagraphsState extends State<_LiveParagraphs> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void didUpdateWidget(covariant _LiveParagraphs oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldLastId = oldWidget.paragraphs.isNotEmpty ? oldWidget.paragraphs.last.id : null;
+    final newLastId = widget.paragraphs.isNotEmpty ? widget.paragraphs.last.id : null;
+
+    if (oldLastId != newLastId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scrollController.hasClients) return;
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final recent = paragraphs.length > 4
-        ? paragraphs.sublist(paragraphs.length - 4)
-        : paragraphs;
+    final recent = widget.paragraphs.length > 4
+        ? widget.paragraphs.sublist(widget.paragraphs.length - 4)
+        : widget.paragraphs;
 
     return Expanded(
       child: ListView.builder(
+        controller: _scrollController,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: recent.length,
         itemBuilder: (_, i) {
           final p = recent[i];
           return _ParagraphCard(
             paragraph: p,
-            isPlaying: playingId == p.id,
-            onTap: onTap,
+            isPlaying: widget.playingId == p.id,
+            onTap: widget.onTap,
           );
         },
       ),
