@@ -231,26 +231,56 @@ class WhisperSttDatasource implements SttDatasource {
 
   // ── Descarga del modelo (mismo patrón que MlKitTranslateDatasource) ──
 
+  /// Tamaño mínimo esperado por modelo (bytes), a modo de chequeo de
+  /// integridad barato. Si el archivo existe pero pesa menos que esto, es
+  /// que una descarga anterior quedó a medias (red cortada, app cerrada a
+  /// mitad de la descarga, etc.) — un .bin de ggml truncado NO tira una
+  /// excepción de Dart al cargarlo: whisper.cpp lo lee del lado nativo (FFI)
+  /// y un archivo corrupto ahí crashea el proceso entero sin dar chance de
+  /// capturar el error. Por eso esta validación es la única defensa real.
+  static const Map<WhisperModel, int> _minExpectedBytes = {
+    WhisperModel.tiny: 70 * 1000 * 1000,
+    WhisperModel.base: 130 * 1000 * 1000,
+    WhisperModel.small: 450 * 1000 * 1000,
+    WhisperModel.medium: 1400 * 1000 * 1000,
+    WhisperModel.largeV1: 2800 * 1000 * 1000,
+    WhisperModel.largeV2: 2800 * 1000 * 1000,
+  };
+
   Future<Directory> _resolveModelDir() {
     return Platform.isAndroid ? getApplicationSupportDirectory() : getLibraryDirectory();
   }
 
-  /// Verifica si el modelo de Whisper ya está descargado en este dispositivo.
+  /// Verifica si el modelo de Whisper ya está descargado Y es un archivo
+  /// completo (no un .bin truncado de una descarga anterior interrumpida).
   Future<bool> isModelDownloaded() async {
     final dir = await _resolveModelDir();
-    return File(_model.getPath(dir.path)).existsSync();
+    final file = File(_model.getPath(dir.path));
+    if (!file.existsSync()) return false;
+
+    final minBytes = _minExpectedBytes[_model] ?? 0;
+    if (file.lengthSync() < minBytes) {
+      // Archivo corrupto/incompleto: lo borramos para forzar una descarga
+      // limpia la próxima vez, en vez de dejar una bomba de tiempo nativa.
+      try {
+        file.deleteSync();
+      } catch (_) {}
+      return false;
+    }
+    return true;
   }
 
   /// Descarga el modelo de Whisper con progreso, guardándolo en el mismo path
-  /// que después va a buscar la librería nativa — si ya está descargado,
-  /// no vuelve a bajarlo.
+  /// que después va a buscar la librería nativa — si ya está descargado (y
+  /// es válido), no vuelve a bajarlo.
   Future<void> downloadModel({required void Function(double progress) onProgress}) async {
-    final dir = await _resolveModelDir();
-    final destination = File(_model.getPath(dir.path));
-    if (destination.existsSync()) {
+    if (await isModelDownloaded()) {
       onProgress(1.0);
       return;
     }
+
+    final dir = await _resolveModelDir();
+    final destination = File(_model.getPath(dir.path));
 
     final uri = Uri.parse(
       'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${_model.modelName}.bin',
@@ -276,6 +306,17 @@ class WhisperSttDatasource implements SttDatasource {
       } finally {
         await sink.close();
       }
+
+      // La conexión puede cortarse a mitad de la descarga sin que el stream
+      // tire una excepción (queda un archivo más chico de lo esperado).
+      // Verificamos el tamaño final antes de darla por buena.
+      final minBytes = _minExpectedBytes[_model] ?? 0;
+      if (destination.lengthSync() < minBytes) {
+        throw ServerException(
+          message: 'La descarga del modelo de voz quedó incompleta (conexión cortada)',
+        );
+      }
+
       onProgress(1.0);
     } catch (e) {
       if (destination.existsSync()) {
