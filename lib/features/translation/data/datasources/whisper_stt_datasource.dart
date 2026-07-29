@@ -39,9 +39,22 @@ class WhisperSttDatasource implements SttDatasource {
   bool _hadSpeech = false;
   Future<void>? _recognitionQueue;
 
-  WhisperSttDatasource({WhisperModel model = WhisperModel.base})
+  // 'tiny' por defecto: prioriza latencia sobre precisión. 'base'/'small' dan
+  // mejor transcripción pero tardan bastante más en un celular de gama media
+  // — si más adelante hace falta más precisión, esto se puede exponer como
+  // opción en Ajustes en vez de venir fijo acá.
+  WhisperSttDatasource({WhisperModel model = WhisperModel.tiny})
       : _model = model,
         _whisper = Whisper(model: model);
+
+  /// Núcleos a usar en la inferencia. Todos los núcleos del SoC (incluidos
+  /// los de eficiencia) puede generar contención con el hilo de UI, así que
+  /// se deja un techo razonable en vez de usar Platform.numberOfProcessors
+  /// completo.
+  int get _inferenceThreads {
+    final cores = Platform.numberOfProcessors;
+    return cores < 4 ? cores : (cores > 6 ? 6 : cores);
+  }
 
   @override
   Stream<SttResult> startStreaming({
@@ -146,7 +159,7 @@ class WhisperSttDatasource implements SttDatasource {
           isTranslate: false,
           isNoTimestamps: true,
           splitOnWord: false,
-          threads: 4,
+          threads: _inferenceThreads,
         ),
       );
 
