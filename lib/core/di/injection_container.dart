@@ -1,8 +1,8 @@
+import 'package:audio_traductor/features/translation/data/datasources/hybrid_stt_datasource.dart';
 import 'package:audio_traductor/features/translation/data/datasources/ml_kit_translate_datasource.dart';
 import 'package:audio_traductor/features/translation/data/datasources/translate_datasource.dart';
 import 'package:audio_traductor/features/translation/data/datasources/translation_local_datasource.dart';
 import 'package:audio_traductor/features/translation/data/datasources/tts_datasource.dart';
-import 'package:audio_traductor/features/translation/data/datasources/whisper_stt_datasource.dart';
 import 'package:audio_traductor/features/translation/data/repositories/translation_repository_impl.dart';
 import 'package:audio_traductor/features/translation/domain/repositories/translation_repository.dart';
 import 'package:audio_traductor/features/translation/domain/usecases/get_translation_history.dart';
@@ -11,7 +11,7 @@ import 'package:audio_traductor/features/translation/domain/usecases/stop_stream
 
 class InjectionContainer {
   // ── DataSources ──
-  static final WhisperSttDatasource _stt = WhisperSttDatasource();
+  static final HybridSttDatasource _stt = HybridSttDatasource();
   static final TranslateDatasource _translate = MlKitTranslateDatasource();
   static final TtsDatasource _tts = RealTtsDatasource.instance;
   static final _local = TranslationLocalDatasource();
@@ -36,16 +36,16 @@ class InjectionContainer {
   static final ClearTranslationHistory clearHistory =
       ClearTranslationHistory(_repository);
 
-  /// Verifica si el modelo de Whisper (STT offline) ya está descargado.
+  /// Verifica si el modelo de Whisper (fallback offline) ya está descargado.
   static Future<bool> isSttModelDownloaded() {
-    return _stt.isModelDownloaded();
+    return _stt.isSttModelDownloaded();
   }
 
   /// Descarga el modelo de Whisper con callback de progreso.
   static Future<void> downloadSttModel({
     required void Function(double progress) onProgress,
   }) {
-    return _stt.downloadModel(onProgress: onProgress);
+    return _stt.downloadSttModel(onProgress: onProgress);
   }
 
   /// Verifica si los modelos de ML Kit para [source]↔[target] ya están descargados.
