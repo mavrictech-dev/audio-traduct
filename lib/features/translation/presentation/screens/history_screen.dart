@@ -1,5 +1,6 @@
 import 'package:audio_traductor/core/errors/failures.dart';
 import 'package:audio_traductor/core/di/injection_container.dart';
+import 'package:audio_traductor/core/theme/liquid_glass/glass_card.dart';
 import 'package:audio_traductor/core/utils/language_utils.dart';
 import 'package:audio_traductor/features/history_export/data/repositories/export_repository_impl.dart';
 import 'package:audio_traductor/features/translation/domain/entities/translation_session.dart';
@@ -204,10 +205,9 @@ class _SessionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    return GlassCard(
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         onTap: selectionMode ? onToggleSelect : () => _openSession(context),
         child: Padding(
           padding: const EdgeInsets.all(14),

@@ -1,3 +1,4 @@
+import 'package:audio_traductor/core/theme/liquid_glass/liquid_glass.dart';
 import 'package:audio_traductor/features/translation/domain/entities/language.dart';
 import 'package:flutter/material.dart';
 
@@ -25,14 +26,12 @@ class LanguageSelector extends StatelessWidget {
 
     return InkWell(
       onTap: () => _showPicker(context),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
+      borderRadius: BorderRadius.circular(16),
+      child: LiquidGlass(
+        borderRadius: BorderRadius.circular(16),
+        blurSigma: 14,
+        tintOpacity: 0.12,
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: colorScheme.surface.withValues(alpha: 0.45),
-          border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.35)),
-          borderRadius: BorderRadius.circular(12),
-        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

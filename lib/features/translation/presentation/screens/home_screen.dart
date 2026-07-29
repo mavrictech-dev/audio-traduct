@@ -1,5 +1,6 @@
 import 'package:audio_traductor/core/constants/app_constants.dart';
 import 'package:audio_traductor/core/services/tab_index_provider.dart';
+import 'package:audio_traductor/core/theme/liquid_glass/liquid_glass.dart';
 import 'package:audio_traductor/core/utils/language_utils.dart';
 import 'package:audio_traductor/core/services/audio_device_manager.dart';
 import 'package:audio_traductor/core/services/bluetooth_provider.dart';
@@ -263,15 +264,21 @@ class HomeScreen extends ConsumerWidget {
               Expanded(
                 child: Center(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Column(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: LiquidGlass(
+                      borderRadius: BorderRadius.circular(24),
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.download_rounded, size: 48,
                           color: colorScheme.primary),
                         const SizedBox(height: 16),
                         Text(
-                          'Descargando modelos de idioma',
+                          state.downloadStepLabel != null
+                              ? 'Preparando el motor de voz'
+                              : 'Descargando modelos de idioma',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
@@ -315,6 +322,7 @@ class HomeScreen extends ConsumerWidget {
                           textAlign: TextAlign.center,
                         ),
                       ],
+                    ),
                     ),
                   ),
               ),

@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:audio_traductor/core/services/audio_level_service.dart';
+import 'package:audio_traductor/core/theme/liquid_glass/liquid_glass.dart';
 
-/// Botón circular animado para iniciar/detener la traducción.
+/// Botón de grabación: un orbe de vidrio que reacciona al nivel de voz real
+/// (mismo [AudioLevelService] que ya alimentaba el pulso del botón original).
+/// El blur, el tinte y el brillo del vidrio crecen con el volumen — la idea
+/// es que el vidrio "escuche": cuanto más fuerte se habla, más viva se ve
+/// la superficie, en vez de solo escalar un círculo plano.
 class RecordingButton extends StatefulWidget {
   final bool isStreaming;
   final VoidCallback onStart;
@@ -30,29 +35,40 @@ class _RecordingButtonState extends State<RecordingButton> {
         valueListenable: AudioLevelService.instance.levelNotifier,
         builder: (context, level, child) {
           final effectiveLevel = widget.isStreaming ? level : 0.0;
-          return AnimatedScale(
-            scale: 1.0 + (effectiveLevel * 0.4),
+          final accent = widget.isStreaming ? colorScheme.error : colorScheme.primary;
+          // `onPrimary` asume un fondo SÓLIDO de `primary` — ya no aplica:
+          // el orbe ahora es vidrio translúcido, así que el contraste real
+          // depende del brillo general del tema, no del par primary/onPrimary.
+          final iconColor = theme.brightness == Brightness.dark
+              ? Colors.white
+              : colorScheme.onSurface;
+
+          return AnimatedContainer(
             duration: const Duration(milliseconds: 100),
             curve: Curves.easeOutQuad,
-            child: Container(
-              width: 88,
-              height: 88,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: widget.isStreaming ? colorScheme.error : colorScheme.primary,
-                boxShadow: [
-                  BoxShadow(
-                    color: (widget.isStreaming ? colorScheme.error : colorScheme.primary)
-                        .withValues(alpha: 0.3 + (effectiveLevel * 0.3)),
-                    blurRadius: 20.0 + (effectiveLevel * 10.0),
-                    spreadRadius: 2.0 + (effectiveLevel * 5.0),
-                  ),
-                ],
-              ),
-              child: Icon(
-                widget.isStreaming ? Icons.stop_rounded : Icons.mic_rounded,
-                size: 40,
-                color: colorScheme.onPrimary,
+            width: 92 + (effectiveLevel * 22),
+            height: 92 + (effectiveLevel * 22),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.32 + (effectiveLevel * 0.32)),
+                  blurRadius: 24.0 + (effectiveLevel * 20.0),
+                  spreadRadius: 2.0 + (effectiveLevel * 8.0),
+                ),
+              ],
+            ),
+            child: LiquidGlass(
+              borderRadius: const BorderRadius.all(Radius.circular(999)),
+              tintColor: accent,
+              tintOpacity: 0.30 + (effectiveLevel * 0.24),
+              blurSigma: 16 + (effectiveLevel * 14),
+              child: Center(
+                child: Icon(
+                  widget.isStreaming ? Icons.stop_rounded : Icons.mic_rounded,
+                  size: 40,
+                  color: iconColor,
+                ),
               ),
             ),
           );

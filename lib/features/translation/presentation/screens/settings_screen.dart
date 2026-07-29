@@ -1,3 +1,4 @@
+import 'package:audio_traductor/core/theme/liquid_glass/glass_card.dart';
 import 'package:audio_traductor/features/translation/presentation/providers/audio_settings_provider.dart';
 import 'package:audio_traductor/features/translation/presentation/providers/theme_provider.dart';
 import 'package:audio_traductor/features/translation/presentation/widgets/audio_devices_panel.dart';
@@ -27,8 +28,7 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           // ── Apariencia ──
           _SectionHeader(title: 'Apariencia'),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          GlassCard(
             child: SwitchListTile(
               secondary: Icon(
                 isDark ? Icons.dark_mode : Icons.light_mode,
@@ -49,8 +49,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           // ── Selector de color acento ──
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          GlassCard(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -82,8 +81,7 @@ class SettingsScreen extends ConsumerWidget {
 
           // ── Voz de salida ──
           _SectionHeader(title: 'Voz de salida'),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          GlassCard(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -120,8 +118,7 @@ class SettingsScreen extends ConsumerWidget {
 
           // ── Audio ──
           _SectionHeader(title: 'Audio'),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          GlassCard(
             child: ListTile(
               leading: const Icon(Icons.speed),
               title: const Text('Velocidad'),
@@ -142,8 +139,7 @@ class SettingsScreen extends ConsumerWidget {
 
           // ── Dispositivos de audio ──
           _SectionHeader(title: 'Dispositivos de audio'),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          GlassCard(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(

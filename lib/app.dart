@@ -1,5 +1,6 @@
 import 'package:audio_traductor/core/services/tab_index_provider.dart';
 import 'package:audio_traductor/core/theme/app_theme.dart';
+import 'package:audio_traductor/core/theme/liquid_glass/glass_nav_bar.dart';
 import 'package:audio_traductor/features/translation/presentation/providers/theme_provider.dart';
 import 'package:audio_traductor/features/translation/presentation/providers/translation_provider.dart';
 import 'package:audio_traductor/features/translation/presentation/screens/home_screen.dart';
@@ -104,8 +105,8 @@ class _MainShellState extends ConsumerState<MainShell> with WidgetsBindingObserv
             index: currentIndex,
             children: _screens,
           ),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: currentIndex,
+          bottomNavigationBar: GlassNavBar(
+            currentIndex: currentIndex,
             onDestinationSelected: (index) {
               // Pausar traducción si se sale de la pestaña Traductor
               if (currentIndex == 0 && index != 0) {
@@ -117,20 +118,20 @@ class _MainShellState extends ConsumerState<MainShell> with WidgetsBindingObserv
                 ref.invalidate(historyProvider);
               }
             },
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.translate_outlined),
-                selectedIcon: Icon(Icons.translate),
+            items: const [
+              GlassNavItem(
+                icon: Icons.translate_outlined,
+                selectedIcon: Icons.translate,
                 label: 'Traductor',
               ),
-              NavigationDestination(
-                icon: Icon(Icons.history_outlined),
-                selectedIcon: Icon(Icons.history),
+              GlassNavItem(
+                icon: Icons.history_outlined,
+                selectedIcon: Icons.history,
                 label: 'Historial',
               ),
-              NavigationDestination(
-                icon: Icon(Icons.settings_outlined),
-                selectedIcon: Icon(Icons.settings),
+              GlassNavItem(
+                icon: Icons.settings_outlined,
+                selectedIcon: Icons.settings,
                 label: 'Ajustes',
               ),
             ],

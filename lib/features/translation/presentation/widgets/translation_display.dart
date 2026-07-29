@@ -1,3 +1,4 @@
+import 'package:audio_traductor/core/theme/liquid_glass/liquid_glass.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -23,13 +24,11 @@ class TranslationDisplay extends StatelessWidget {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colorScheme.surface.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
+      child: LiquidGlass(
+        borderRadius: BorderRadius.circular(20),
+        blurSigma: 18,
+        tintOpacity: 0.14,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Texto original
@@ -152,6 +151,7 @@ class TranslationDisplay extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }
