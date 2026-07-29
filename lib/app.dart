@@ -1,0 +1,142 @@
+import 'package:audio_traductor/core/services/tab_index_provider.dart';
+import 'package:audio_traductor/core/theme/app_theme.dart';
+import 'package:audio_traductor/features/translation/presentation/providers/theme_provider.dart';
+import 'package:audio_traductor/features/translation/presentation/providers/translation_provider.dart';
+import 'package:audio_traductor/features/translation/presentation/screens/home_screen.dart';
+import 'package:audio_traductor/features/translation/presentation/screens/history_screen.dart';
+import 'package:audio_traductor/features/translation/presentation/screens/settings_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+/// Widget raíz de la aplicación.
+class AudioTraductorApp extends ConsumerWidget {
+  const AudioTraductorApp({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+    final seedColor = ref.watch(seedColorProvider);
+
+    return MaterialApp(
+      title: 'Audio Traductor',
+      debugShowCheckedModeBanner: false,
+
+      // ── Temas dinámicos (seed color vivo) ──
+      theme: AppTheme.light(seedColor),
+      darkTheme: AppTheme.dark(seedColor),
+      themeMode: themeMode,
+
+      // ── Home con BottomNavigation ──
+      home: const MainShell(),
+    );
+  }
+}
+
+/// Shell principal con BottomNavigationBar y fondo degradado.
+///
+/// Usa [Theme.of(context).brightness] para elegir el degradado correcto
+/// en vez de mirar el provider. Esto evita:
+///   1. Color incorrecto en primer inicio con modo sistema
+///   2. Rebuild duplicado que ralentiza el cambio de tema
+///
+/// Al cambiar a la pestaña Historial, invalida el provider para
+/// traer siempre los datos más frescos (sesiones recién grabadas).
+class MainShell extends ConsumerStatefulWidget {
+  const MainShell({super.key});
+
+  @override
+  ConsumerState<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends ConsumerState<MainShell> with WidgetsBindingObserver {
+  final _screens = const <Widget>[
+    HomeScreen(),
+    HistoryScreen(),
+    SettingsScreen(),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      // Pausar traducción al salir de la app
+      ref.read(translationProvider.notifier).stopTranslation();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    final gradientColors = brightness == Brightness.dark
+        ? AppTheme.darkGradient
+        : AppTheme.lightGradient;
+    final currentIndex = ref.watch(tabIndexProvider);
+
+    return PopScope(
+      canPop: currentIndex == 0,
+      onPopInvoked: (didPop) {
+        if (!didPop && currentIndex != 0) {
+          ref.read(tabIndexProvider.notifier).state = 0;
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: gradientColors,
+          ),
+        ),
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: IndexedStack(
+            index: currentIndex,
+            children: _screens,
+          ),
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: currentIndex,
+            onDestinationSelected: (index) {
+              // Pausar traducción si se sale de la pestaña Traductor
+              if (currentIndex == 0 && index != 0) {
+                ref.read(translationProvider.notifier).stopTranslation();
+              }
+              ref.read(tabIndexProvider.notifier).state = index;
+              // Refrescar historial cada vez que se entra a la pestaña
+              if (index == 1) {
+                ref.invalidate(historyProvider);
+              }
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.translate_outlined),
+                selectedIcon: Icon(Icons.translate),
+                label: 'Traductor',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.history_outlined),
+                selectedIcon: Icon(Icons.history),
+                label: 'Historial',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: 'Ajustes',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
