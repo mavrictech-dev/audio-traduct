@@ -287,11 +287,12 @@ class HomeScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          state.downloadLanguage != null
-                              ? (state.downloadProgress < 0.5
-                                  ? 'Paso 1/2: ${LangUtils.name(state.downloadLanguage!)}'
-                                  : 'Paso 2/2: ${LangUtils.name(state.downloadLanguage!)}')
-                              : 'Preparando...',
+                          state.downloadStepLabel ??
+                              (state.downloadLanguage != null
+                                  ? (state.downloadProgress < 0.5
+                                      ? 'Paso 1/2: ${LangUtils.name(state.downloadLanguage!)}'
+                                      : 'Paso 2/2: ${LangUtils.name(state.downloadLanguage!)}')
+                                  : 'Preparando...'),
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),

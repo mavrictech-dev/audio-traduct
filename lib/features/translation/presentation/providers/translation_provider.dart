@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:audio_traductor/core/di/injection_container.dart';
 import 'package:audio_traductor/core/services/mic_passthrough_service.dart';
-import 'package:audio_traductor/features/translation/data/datasources/google_tts_datasource.dart';
+import 'package:audio_traductor/features/translation/data/datasources/tts_datasource.dart';
 import 'package:audio_traductor/features/translation/domain/entities/translation_paragraph.dart';
 import 'package:audio_traductor/features/translation/domain/entities/translation_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,6 +19,7 @@ class TranslationState {
   final bool micMode;
   final double downloadProgress;
   final String? downloadLanguage;
+  final String? downloadStepLabel;
 
   const TranslationState({
     this.status = TranslationStatus.idle,
@@ -31,6 +32,7 @@ class TranslationState {
     this.micMode = false,
     this.downloadProgress = 0.0,
     this.downloadLanguage,
+    this.downloadStepLabel,
   });
 
   TranslationState copyWith({
@@ -44,6 +46,7 @@ class TranslationState {
     bool? micMode,
     double? downloadProgress,
     String? downloadLanguage,
+    String? downloadStepLabel,
   }) {
     return TranslationState(
       status: status ?? this.status,
@@ -56,6 +59,11 @@ class TranslationState {
       micMode: micMode ?? this.micMode,
       downloadProgress: downloadProgress ?? this.downloadProgress,
       downloadLanguage: downloadLanguage ?? this.downloadLanguage,
+      // A diferencia de downloadLanguage (que conserva el valor previo si se
+      // pasa null), este campo sí se limpia explícitamente: lo necesitamos
+      // para distinguir el paso "modelo de Whisper" del paso "modelos ML Kit"
+      // dentro del mismo estado downloadingModels.
+      downloadStepLabel: downloadStepLabel,
     );
   }
 }
@@ -112,6 +120,28 @@ class TranslationNotifier extends StateNotifier<TranslationState> {
     }
 
     try {
+      // ── Verificar / descargar el modelo de Whisper (STT offline) ──
+      // Va antes que ML Kit: es la descarga más pesada (decenas de MB) y solo
+      // pasa una vez en la vida de la app.
+      final sttModelReady = await InjectionContainer.isSttModelDownloaded();
+
+      if (!sttModelReady) {
+        state = state.copyWith(
+          status: TranslationStatus.downloadingModels,
+          isStreaming: false,
+          downloadProgress: 0.0,
+          downloadStepLabel: 'Modelo de voz (offline)',
+          paragraphs: [],
+          errorMessage: null,
+        );
+
+        await InjectionContainer.downloadSttModel(
+          onProgress: (progress) {
+            state = state.copyWith(downloadProgress: progress);
+          },
+        );
+      }
+
       // ── Verificar / descargar modelos de ML Kit ──
       final modelsReady = await InjectionContainer.areModelsDownloaded(
         sourceLanguage,
@@ -124,6 +154,7 @@ class TranslationNotifier extends StateNotifier<TranslationState> {
           isStreaming: false,
           downloadProgress: 0.0,
           downloadLanguage: null,
+          downloadStepLabel: null,
           paragraphs: [],
           errorMessage: null,
         );
@@ -145,6 +176,7 @@ class TranslationNotifier extends StateNotifier<TranslationState> {
         isStreaming: true,
         downloadProgress: 0.0,
         downloadLanguage: null,
+        downloadStepLabel: null,
         paragraphs: [],
         errorMessage: null,
       );

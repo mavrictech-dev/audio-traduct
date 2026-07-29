@@ -1,5 +1,5 @@
 import 'package:audio_traductor/core/errors/exceptions.dart';
-import 'package:audio_traductor/features/translation/data/datasources/google_translate_datasource.dart';
+import 'package:audio_traductor/features/translation/data/datasources/translate_datasource.dart';
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 
 /// DataSource de traducción ON-DEVICE usando Google ML Kit.

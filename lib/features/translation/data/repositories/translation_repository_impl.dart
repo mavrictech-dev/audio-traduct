@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:audio_traductor/core/errors/failures.dart';
-import 'package:audio_traductor/features/translation/data/datasources/google_stt_datasource.dart';
-import 'package:audio_traductor/features/translation/data/datasources/google_translate_datasource.dart';
-import 'package:audio_traductor/features/translation/data/datasources/google_tts_datasource.dart';
+import 'package:audio_traductor/features/translation/data/datasources/stt_datasource.dart';
+import 'package:audio_traductor/features/translation/data/datasources/translate_datasource.dart';
+import 'package:audio_traductor/features/translation/data/datasources/tts_datasource.dart';
 import 'package:audio_traductor/features/translation/data/datasources/translation_local_datasource.dart';
 import 'package:audio_traductor/features/translation/data/models/translation_session_model.dart';
 import 'package:audio_traductor/features/translation/domain/entities/translation_paragraph.dart';

@@ -1,4 +1,4 @@
-import 'package:audio_traductor/features/translation/data/datasources/google_tts_datasource.dart';
+import 'package:audio_traductor/features/translation/data/datasources/tts_datasource.dart';
 import 'package:audio_traductor/features/translation/domain/entities/voice_actor.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

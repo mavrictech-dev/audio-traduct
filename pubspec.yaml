@@ -17,10 +17,13 @@ dependencies:
   # ── ML Kit On-Device Translation ──
   google_mlkit_translation: ^0.13.1
 
+  # ── Whisper.cpp On-Device Speech-to-Text (offline, sin API key) ──
+  whisper_flutter_new: ^1.0.1
+
   # ── Permisos runtime (BLUETOOTH_CONNECT) ──
   permission_handler: ^11.3.1
 
-  # ── HTTP (solo STT cloud, si se usa) ──
+  # ── HTTP (descarga del modelo de Whisper con progreso) ──
   http: ^1.6.0
 
   # ── Audio ──

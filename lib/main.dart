@@ -1,6 +1,6 @@
 import 'package:audio_traductor/app.dart';
 import 'package:audio_traductor/core/di/injection_container.dart';
-import 'package:audio_traductor/features/translation/data/datasources/google_tts_datasource.dart';
+import 'package:audio_traductor/features/translation/data/datasources/tts_datasource.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
