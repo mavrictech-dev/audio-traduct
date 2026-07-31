@@ -34,6 +34,7 @@ class VoiceActor extends Equatable {
 
     // ── Portugués ──
     VoiceActor(name: 'pt-BR-Wavenet-A', displayName: 'WaveNet (Mujer)', languageCode: 'pt', gender: VoiceGender.female, ssmlGender: 'FEMALE'),
+    VoiceActor(name: 'pt-BR-Wavenet-B', displayName: 'WaveNet (Hombre)', languageCode: 'pt', gender: VoiceGender.male, ssmlGender: 'MALE'),
 
     // ── Francés ──
     VoiceActor(name: 'fr-FR-Standard-A', displayName: 'Estándar (Mujer)', languageCode: 'fr', gender: VoiceGender.female, ssmlGender: 'FEMALE'),
@@ -41,12 +42,15 @@ class VoiceActor extends Equatable {
 
     // ── Alemán ──
     VoiceActor(name: 'de-DE-Wavenet-A', displayName: 'WaveNet (Mujer)', languageCode: 'de', gender: VoiceGender.female, ssmlGender: 'FEMALE'),
+    VoiceActor(name: 'de-DE-Wavenet-B', displayName: 'WaveNet (Hombre)', languageCode: 'de', gender: VoiceGender.male, ssmlGender: 'MALE'),
 
     // ── Italiano ──
     VoiceActor(name: 'it-IT-Standard-A', displayName: 'Estándar (Mujer)', languageCode: 'it', gender: VoiceGender.female, ssmlGender: 'FEMALE'),
+    VoiceActor(name: 'it-IT-Standard-B', displayName: 'Estándar (Hombre)', languageCode: 'it', gender: VoiceGender.male, ssmlGender: 'MALE'),
 
     // ── Japonés ──
     VoiceActor(name: 'ja-JP-Standard-A', displayName: 'Estándar (Mujer)', languageCode: 'ja', gender: VoiceGender.female, ssmlGender: 'FEMALE'),
+    VoiceActor(name: 'ja-JP-Standard-B', displayName: 'Estándar (Hombre)', languageCode: 'ja', gender: VoiceGender.male, ssmlGender: 'MALE'),
 
     // ── Chino ──
     VoiceActor(name: 'zh-CN-Wavenet-A', displayName: 'WaveNet (Mujer)', languageCode: 'zh', gender: VoiceGender.female, ssmlGender: 'FEMALE'),
@@ -54,9 +58,11 @@ class VoiceActor extends Equatable {
 
     // ── Coreano ──
     VoiceActor(name: 'ko-KR-Wavenet-A', displayName: 'WaveNet (Mujer)', languageCode: 'ko', gender: VoiceGender.female, ssmlGender: 'FEMALE'),
+    VoiceActor(name: 'ko-KR-Wavenet-B', displayName: 'WaveNet (Hombre)', languageCode: 'ko', gender: VoiceGender.male, ssmlGender: 'MALE'),
 
     // ── Ruso ──
     VoiceActor(name: 'ru-RU-Standard-A', displayName: 'Estándar (Mujer)', languageCode: 'ru', gender: VoiceGender.female, ssmlGender: 'FEMALE'),
+    VoiceActor(name: 'ru-RU-Standard-B', displayName: 'Estándar (Hombre)', languageCode: 'ru', gender: VoiceGender.male, ssmlGender: 'MALE'),
 
     // ── Árabe ──
     VoiceActor(name: 'ar-XA-Standard-A', displayName: 'Estándar (Mujer)', languageCode: 'ar', gender: VoiceGender.female, ssmlGender: 'FEMALE'),
@@ -64,6 +70,7 @@ class VoiceActor extends Equatable {
 
     // ── Neerlandés ──
     VoiceActor(name: 'nl-NL-Standard-A', displayName: 'Estándar (Mujer)', languageCode: 'nl', gender: VoiceGender.female, ssmlGender: 'FEMALE'),
+    VoiceActor(name: 'nl-NL-Standard-B', displayName: 'Estándar (Hombre)', languageCode: 'nl', gender: VoiceGender.male, ssmlGender: 'MALE'),
   ];
 }
 
