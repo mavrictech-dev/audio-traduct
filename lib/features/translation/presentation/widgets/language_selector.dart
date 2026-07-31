@@ -76,9 +76,8 @@ class LanguageSelector extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
       builder: (ctx) => _LanguagePickerSheet(
         selectedCode: selectedCode,
         excludeCode: excludeCode,
@@ -160,7 +159,11 @@ class _LanguagePickerSheetState extends State<_LanguagePickerSheet> {
       maxChildSize: 0.85,
       expand: false,
       builder: (context, scrollController) {
-        return Column(
+        return LiquidGlass(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          blurSigma: 26,
+          tintOpacity: 0.20,
+          child: Column(
           children: [
             // Handle
             Padding(
@@ -223,6 +226,7 @@ class _LanguagePickerSheetState extends State<_LanguagePickerSheet> {
               ),
             ),
           ],
+          ),
         );
       },
     );

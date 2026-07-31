@@ -25,7 +25,7 @@ void main() async {
       final stream = await recorder.startStream(
         const RecordConfig(encoder: AudioEncoder.pcm16bits, numChannels: 1, sampleRate: 16000),
       );
-      stream.listen(null)?.cancel();
+      stream.listen(null).cancel();
       await recorder.stop();
     } catch (_) {}
   }

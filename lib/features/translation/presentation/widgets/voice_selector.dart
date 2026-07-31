@@ -31,7 +31,6 @@ class VoiceSelector extends StatelessWidget {
 
     return Column(
       children: voices.map((voice) {
-        final isSelected = voice.name == selectedVoiceName;
         return ListTile(
           leading: Radio<VoiceActor>(
             value: voice,

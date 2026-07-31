@@ -20,6 +20,8 @@ abstract class TranslationRepository {
 
   Future<Either<Failure, void>> deleteSession(String sessionId);
 
+  Future<Either<Failure, void>> renameSession(String sessionId, String newName);
+
   Future<Either<Failure, void>> clearHistory();
 }
 

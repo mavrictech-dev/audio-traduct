@@ -304,3 +304,8 @@ final historyProvider = FutureProvider<List<TranslationSession>>((ref) async {
 final deleteSessionProvider = FutureProvider.family<void, String>((ref, id) async {
   await InjectionContainer.deleteSession(id);
 });
+
+/// [args] es (id de la sesión, nombre nuevo).
+final renameSessionProvider = FutureProvider.family<void, (String, String)>((ref, args) async {
+  await InjectionContainer.renameSession(args.$1, args.$2);
+});

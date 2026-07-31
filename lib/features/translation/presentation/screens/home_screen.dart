@@ -11,7 +11,6 @@ import 'package:audio_traductor/features/translation/presentation/providers/audi
 import 'package:audio_traductor/features/translation/presentation/screens/history_screen.dart';
 import 'package:audio_traductor/features/translation/presentation/widgets/language_selector.dart';
 import 'package:audio_traductor/features/translation/presentation/widgets/recording_button.dart';
-import 'package:audio_traductor/features/translation/presentation/screens/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -428,7 +427,11 @@ class HomeScreen extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      // Transparente + sin elevación: el material de vidrio lo pone
+      // _SessionPickerSheet, así el fondo (la pantalla de atrás) se ve
+      // desenfocado a través en vez de recortado por un Material opaco.
+      backgroundColor: Colors.transparent,
+      elevation: 0,
       builder: (ctx) => _SessionPickerSheet(ref: ref, sessions: sessions),
     );
   }
@@ -455,11 +458,94 @@ class _SessionPickerSheet extends ConsumerStatefulWidget {
 class _SessionPickerSheetState extends ConsumerState<_SessionPickerSheet> {
   final _nameController = TextEditingController();
   bool _showNew = false;
+  late List<TranslationSession> _sessions;
+
+  @override
+  void initState() {
+    super.initState();
+    _sessions = List.of(widget.sessions);
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _renameSession(TranslationSession s) async {
+    final controller = TextEditingController(text: s.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Renombrar sesión'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Nombre de la sesión'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (newName == null || newName.isEmpty || newName == s.name) return;
+
+    await widget.ref.read(renameSessionProvider((s.id, newName)).future);
+    widget.ref.invalidate(historyProvider);
+
+    // Si es la sesión activa, reflejar el nombre nuevo ya mismo en Home.
+    final current = widget.ref.read(translationProvider);
+    if (current.currentSessionId == s.id) {
+      widget.ref.read(translationProvider.notifier).setSessionInfo(s.id, newName);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      final i = _sessions.indexWhere((x) => x.id == s.id);
+      if (i != -1) {
+        _sessions[i] = TranslationSession(
+          id: s.id,
+          name: newName,
+          sourceLanguage: s.sourceLanguage,
+          targetLanguage: s.targetLanguage,
+          paragraphs: s.paragraphs,
+          createdAt: s.createdAt,
+          durationMs: s.durationMs,
+        );
+      }
+    });
+  }
+
+  Future<void> _deleteSession(TranslationSession s) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar sesión'),
+        content: Text('¿Eliminar "${s.name.isNotEmpty ? s.name : 'Sesión'}"? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await widget.ref.read(deleteSessionProvider(s.id).future);
+    widget.ref.invalidate(historyProvider);
+
+    // Si se borró la sesión activa, Home vuelve a "sesión sin nombre".
+    final current = widget.ref.read(translationProvider);
+    if (current.currentSessionId == s.id) {
+      widget.ref.read(translationProvider.notifier).setSessionInfo('_new_', '');
+    }
+
+    if (!mounted) return;
+    setState(() => _sessions.removeWhere((x) => x.id == s.id));
   }
 
   @override
@@ -468,7 +554,10 @@ class _SessionPickerSheetState extends ConsumerState<_SessionPickerSheet> {
     final colorScheme = theme.colorScheme;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
-    return AnimatedPadding(
+    return LiquidGlass(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      blurSigma: 26,
+      child: AnimatedPadding(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOutCubic,
       padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + bottomInset),
@@ -520,28 +609,38 @@ class _SessionPickerSheetState extends ConsumerState<_SessionPickerSheet> {
           ),
 
           // ── Sesiones existentes ──
-          if (widget.sessions.isNotEmpty && !_showNew) ...[
+          if (_sessions.isNotEmpty && !_showNew) ...[
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text('Sesiones guardadas', style: theme.textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
             ),
           ],
-          if (widget.sessions.isNotEmpty)
+          if (_sessions.isNotEmpty)
             ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 250),
+              constraints: const BoxConstraints(maxHeight: 300),
               child: ListView.separated(
                 shrinkWrap: true,
-                itemCount: widget.sessions.length,
+                itemCount: _sessions.length,
                 separatorBuilder: (context, index) => const Divider(height: 1),
                 itemBuilder: (_, i) {
-                  final s = widget.sessions[i];
+                  final s = _sessions[i];
                   return ListTile(
                     dense: true,
                     leading: Icon(Icons.chat_outlined, color: colorScheme.primary),
                     title: Text(s.name.isNotEmpty ? s.name : 'Sesión', overflow: TextOverflow.ellipsis),
                     subtitle: Text('${s.paragraphCount} párrafos • ${s.formattedDate}', style: const TextStyle(fontSize: 12)),
-                    trailing: const Icon(Icons.chevron_right, size: 18),
+                    trailing: PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, size: 18),
+                      onSelected: (action) {
+                        if (action == 'rename') _renameSession(s);
+                        if (action == 'delete') _deleteSession(s);
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'rename', child: Text('Renombrar')),
+                        PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                      ],
+                    ),
                     onTap: () {
                       widget.ref.read(translationProvider.notifier).setSessionInfo(s.id, s.name);
                       Navigator.pop(context);
@@ -557,6 +656,7 @@ class _SessionPickerSheetState extends ConsumerState<_SessionPickerSheet> {
             ),
         ],
       ),
+      ),
     );
   }
 
@@ -570,7 +670,11 @@ class _SessionPickerSheetState extends ConsumerState<_SessionPickerSheet> {
 
 // ── Tarjeta de párrafo en vivo ──────────────────────────────────
 
-/// Lista de los últimos 4 párrafos ocupando el espacio disponible.
+/// Lista de TODOS los párrafos de la sesión en curso, scrolleable — antes
+/// se recortaba a los últimos 4 y no había forma de ver lo que se dijo
+/// antes sin cortar la grabación. Se sigue auto-scrolleando al final cada
+/// vez que llega un párrafo nuevo, pero ahora se puede scrollear hacia
+/// arriba para repasar toda la conversación sin perder nada.
 class _LiveParagraphs extends StatefulWidget {
   final List<TranslationParagraph> paragraphs;
   final String? playingId;
@@ -615,17 +719,13 @@ class _LiveParagraphsState extends State<_LiveParagraphs> {
 
   @override
   Widget build(BuildContext context) {
-    final recent = widget.paragraphs.length > 4
-        ? widget.paragraphs.sublist(widget.paragraphs.length - 4)
-        : widget.paragraphs;
-
     return Expanded(
       child: ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: recent.length,
+        itemCount: widget.paragraphs.length,
         itemBuilder: (_, i) {
-          final p = recent[i];
+          final p = widget.paragraphs[i];
           return _ParagraphCard(
             paragraph: p,
             isPlaying: widget.playingId == p.id,
@@ -652,74 +752,87 @@ class _ParagraphCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final translationFailed = paragraph.translatedText.isEmpty;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Original ──
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.mic, size: 14, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      paragraph.originalText,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        height: 1.3,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: LiquidGlass(
+        borderRadius: BorderRadius.circular(16),
+        blurSigma: 14,
+        tintOpacity: 0.12,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Original ──
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.mic, size: 14, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        paragraph.originalText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          height: 1.3,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              // ── Traducción ──
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    isPlaying ? Icons.volume_up : Icons.translate,
-                    size: 14,
-                    color: isPlaying ? colorScheme.primary : colorScheme.primary.withValues(alpha: 0.6),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      paragraph.translatedText,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: isPlaying ? colorScheme.primary : colorScheme.onSurface,
-                        fontWeight: isPlaying ? FontWeight.w600 : FontWeight.normal,
-                        height: 1.3,
+                  ],
+                ),
+                const SizedBox(height: 6),
+                // ── Traducción (o aviso de que falló, pero el original ya quedó guardado arriba) ──
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      translationFailed
+                          ? Icons.error_outline
+                          : (isPlaying ? Icons.volume_up : Icons.translate),
+                      size: 14,
+                      color: translationFailed
+                          ? colorScheme.error
+                          : (isPlaying ? colorScheme.primary : colorScheme.primary.withValues(alpha: 0.6)),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        translationFailed ? 'No se pudo traducir esta frase' : paragraph.translatedText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: translationFailed
+                              ? colorScheme.error
+                              : (isPlaying ? colorScheme.primary : colorScheme.onSurface),
+                          fontWeight: isPlaying ? FontWeight.w600 : FontWeight.normal,
+                          fontStyle: translationFailed ? FontStyle.italic : FontStyle.normal,
+                          height: 1.3,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  if (isPlaying)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colorScheme.primary,
+                    if (isPlaying)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.primary,
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -26,6 +26,17 @@ class DeleteTranslationSession {
   }
 }
 
+/// Caso de uso: renombra una sesión del historial.
+class RenameTranslationSession {
+  final TranslationRepository _repository;
+
+  RenameTranslationSession(this._repository);
+
+  Future<Either<Failure, void>> call(String sessionId, String newName) {
+    return _repository.renameSession(sessionId, newName);
+  }
+}
+
 /// Caso de uso: limpia todo el historial.
 class ClearTranslationHistory {
   final TranslationRepository _repository;

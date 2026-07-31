@@ -20,6 +20,18 @@ class TranslationSessionModel {
     required this.durationMs,
   });
 
+  TranslationSessionModel copyWithName(String newName) {
+    return TranslationSessionModel(
+      id: id,
+      name: newName,
+      sourceLanguage: sourceLanguage,
+      targetLanguage: targetLanguage,
+      paragraphsJson: paragraphsJson,
+      createdAt: createdAt,
+      durationMs: durationMs,
+    );
+  }
+
   factory TranslationSessionModel.fromJson(Map<String, dynamic> json) {
     return TranslationSessionModel(
       id: json['id'] as String,

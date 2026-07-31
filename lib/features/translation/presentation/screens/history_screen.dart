@@ -343,13 +343,21 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                         isRight: true,
                       ),
                       const SizedBox(height: 4),
-                      // Traducción → izquierda (color secundario)
+                      // Traducción → izquierda (color secundario). Si en su
+                      // momento falló la traducción, el original de arriba
+                      // igual quedó guardado — esto solo lo deja explícito
+                      // en vez de mostrar una burbuja vacía.
                       Bubble(
-                        text: p.translatedText,
+                        text: p.translatedText.isEmpty ? 'No se pudo traducir esta frase' : p.translatedText,
                         flag: tgtFlag,
-                        color: colorScheme.secondaryContainer,
-                        textColor: colorScheme.onSecondaryContainer,
+                        color: p.translatedText.isEmpty
+                            ? colorScheme.errorContainer
+                            : colorScheme.secondaryContainer,
+                        textColor: p.translatedText.isEmpty
+                            ? colorScheme.onErrorContainer
+                            : colorScheme.onSecondaryContainer,
                         isRight: false,
+                        isItalic: p.translatedText.isEmpty,
                       ),
                     ],
                   ),
@@ -366,6 +374,7 @@ class Bubble extends StatelessWidget {
   final Color color;
   final Color textColor;
   final bool isRight;
+  final bool isItalic;
 
   const Bubble({
     super.key,
@@ -374,6 +383,7 @@ class Bubble extends StatelessWidget {
     required this.color,
     required this.textColor,
     required this.isRight,
+    this.isItalic = false,
   });
 
   @override
@@ -400,7 +410,14 @@ class Bubble extends StatelessWidget {
               const SizedBox(width: 8),
             ],
             Flexible(
-              child: Text(text, style: TextStyle(fontSize: 14, color: textColor)),
+              child: Text(
+                text,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: textColor,
+                  fontStyle: isItalic ? FontStyle.italic : FontStyle.normal,
+                ),
+              ),
             ),
             if (isRight) ...[
               const SizedBox(width: 8),

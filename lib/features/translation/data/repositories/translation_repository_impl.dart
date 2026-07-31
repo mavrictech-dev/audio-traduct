@@ -110,16 +110,21 @@ class TranslationRepositoryImpl implements TranslationRepository {
         // La traducción puede correr en paralelo, PERO el mostrado y el audio
         // se respetan por orden de secuencia. Si el 3 termina antes que el 2,
         // se guarda y espera a que el 2 esté listo.
+        //
+        // IMPORTANTE: si la traducción falla, el párrafo original NO se
+        // descarta — se guarda igual con translatedText vacío. Antes, un
+        // catchError((_){}) acá tragaba el error y la transcripción entera
+        // desaparecía sin dejar rastro, ni en pantalla ni en el historial.
         unawaited(_translate.translate(
           text: sttResult.transcript,
           sourceLanguage: sourceLanguage,
           targetLanguage: targetLanguage,
-        ).then((translateResult) {
+        ).then((translateResult) => translateResult.translatedText).catchError((_) => '').then((translatedText) {
           if (_stopped) return;
 
           _readyParagraphs[sequence] = _QueuedParagraph(
             originalText: sttResult.transcript,
-            translatedText: translateResult.translatedText,
+            translatedText: translatedText,
             sourceLanguage: sourceLanguage,
             targetLanguage: targetLanguage,
             timestamp: DateTime.now(),
@@ -145,20 +150,24 @@ class TranslationRepositoryImpl implements TranslationRepository {
                 isFinal: true,
               ));
 
-              _ttsQueue = (_ttsQueue ?? Future.value()).then((_) async {
-                if (_stopped) return;
-                await _tts.synthesize(
-                  text: item.translatedText,
-                  voiceName: voiceName,
-                  languageCode: targetLanguage,
-                  speed: _speed,
-                );
-              }).catchError((_) {});
+              // Sin traducción no hay nada que hablar — pero el párrafo ya
+              // quedó visible y guardado arriba de todos modos.
+              if (item.translatedText.isNotEmpty) {
+                _ttsQueue = (_ttsQueue ?? Future.value()).then((_) async {
+                  if (_stopped) return;
+                  await _tts.synthesize(
+                    text: item.translatedText,
+                    voiceName: voiceName,
+                    languageCode: targetLanguage,
+                    speed: _speed,
+                  );
+                }).catchError((_) {});
+              }
 
               _nextToFlush++;
             }
           }).catchError((_) {});
-        }).catchError((_) {}));
+        }));
       },
       onError: (e) => _chunkController?.addError(e),
       onDone: () => _chunkController?.close(),
@@ -240,6 +249,22 @@ class TranslationRepositoryImpl implements TranslationRepository {
       return Right(models.map((m) => m.toEntity()).toList());
     } on Exception catch (e) {
       return Left(StorageFailure(message: 'Error al obtener historial', originalError: e as Object?));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> renameSession(String sessionId, String newName) async {
+    try {
+      await _local.renameSession(sessionId, newName);
+      // Si la sesión que se está renombrando es la actual, reflejarlo ya
+      // mismo en memoria — si no, el chip de sesión en Home queda con el
+      // nombre viejo hasta la próxima vez que se lea del repo.
+      if (sessionId == _currentSessionId) {
+        _sessionName = newName;
+      }
+      return const Right(null);
+    } on Exception catch (e) {
+      return Left(StorageFailure(message: 'Error al renombrar', originalError: e as Object?));
     }
   }
 

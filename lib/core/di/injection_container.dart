@@ -33,6 +33,8 @@ class InjectionContainer {
       GetTranslationHistory(_repository);
   static final DeleteTranslationSession deleteSession =
       DeleteTranslationSession(_repository);
+  static final RenameTranslationSession renameSession =
+      RenameTranslationSession(_repository);
   static final ClearTranslationHistory clearHistory =
       ClearTranslationHistory(_repository);
 

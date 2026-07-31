@@ -61,6 +61,21 @@ class TranslationLocalDatasource {
     }
   }
 
+  /// Renombra una sesión existente sin tocar sus párrafos.
+  Future<void> renameSession(String sessionId, String newName) async {
+    try {
+      final existing = await getSession(sessionId);
+      if (existing == null) {
+        throw CacheException(message: 'Sesión no encontrada: $sessionId');
+      }
+      await saveSession(existing.copyWithName(newName));
+    } on CacheException {
+      rethrow;
+    } catch (e) {
+      throw CacheException(message: 'Error al renombrar sesión: $e');
+    }
+  }
+
   Future<void> deleteSession(String sessionId) async {
     try {
       final box = await _db;
