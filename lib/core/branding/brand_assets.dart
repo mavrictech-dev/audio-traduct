@@ -30,6 +30,11 @@ class BrandAssets {
   /// Icono de la app en versión oscura (fondo azul noche).
   static const String appIconDark = 'assets/icon/app-icon-dark.png';
 
+  /// Mismo arte sin fondo. Sirve sobre cualquier color y lo usan las
+  /// variantes oscura y teñida del icono de iOS 18.
+  static const String appIconTransparent =
+      'assets/icon/app-icon-transparent.png';
+
   // ── Fondo ──
   /// Fondo decorativo que se pinta detrás de la pantalla de carga.
   static const String splashBackground = 'assets/splash-bg.png';

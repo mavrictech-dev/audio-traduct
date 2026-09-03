@@ -72,10 +72,13 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # Se declaran los directorios enteros: así se puede reemplazar o agregar
-  # arte de marca sin volver a tocar este archivo.
+  # Solo lo que la app lee en tiempo de ejecución. El arte que consumen los
+  # generadores de icono y splash (icon-sf*.png, icon-traductor.png) vive en
+  # `assets/` pero no se empaqueta: sumaba ~4,8 MB muertos al APK.
+  # Los directorios de marca sí van enteros, para poder agregar o reemplazar
+  # piezas sin volver a tocar este archivo.
   assets:
-    - assets/
+    - assets/splash-bg.png
     - assets/brand/
     - assets/icon/
 
@@ -92,9 +95,13 @@ flutter_launcher_icons:
   image_path: "assets/icon/app-icon-light.png"
   image_path_android: "assets/icon/app-icon-light.png"
   image_path_ios: "assets/icon/app-icon-light.png"
-  # iOS 18: variantes oscura y teñida del icono.
-  image_path_ios_dark_transparent: "assets/icon/app-icon-dark.png"
-  image_path_ios_tinted_grayscale: "assets/icon/app-icon-dark.png"
+  # iOS 18: variantes oscura y teñida. Van con el arte transparente porque el
+  # sistema pinta su propio fondo detrás; una imagen opaca con las esquinas
+  # ya redondeadas se vería recortada dos veces.
+  image_path_ios_dark_transparent: "assets/icon/app-icon-transparent.png"
+  image_path_ios_tinted_grayscale: "assets/icon/app-icon-transparent.png"
+  # iOS pide la variante teñida en escala de grises; la desatura el generador.
+  desaturate_tinted_to_grayscale_ios: true
   remove_alpha_ios: true
   # Android 13+: para habilitar el "icono con tema" hacen falta dos PNG
   # extra dibujados con zona segura (el arte ocupa el 66% central, el resto
@@ -112,13 +119,13 @@ flutter_launcher_icons:
 flutter_native_splash:
   color: "#E8F0FE"
   color_dark: "#0A1628"
-  image: assets/icon-sf-splash.png
-  image_dark: assets/icon-sf-splash.png
+  image: assets/icon/app-icon-transparent.png
+  image_dark: assets/icon/app-icon-transparent.png
   android: true
   ios: true
   web: false
   android_12:
     color: "#E8F0FE"
     color_dark: "#0A1628"
-    image: assets/icon-sf-splash.png
-    image_dark: assets/icon-sf-splash.png
+    image: assets/icon/app-icon-transparent.png
+    image_dark: assets/icon/app-icon-transparent.png

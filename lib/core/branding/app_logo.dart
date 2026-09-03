@@ -46,7 +46,7 @@ class AppLogo extends StatelessWidget {
           candidates: [
             BrandAssets.appIconFor(theme.brightness),
             BrandAssets.appIconLight,
-            'assets/icon-traductor.png',
+            BrandAssets.appIconTransparent,
           ],
           width: size,
           height: size,
