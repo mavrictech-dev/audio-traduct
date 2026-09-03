@@ -1,42 +1,20 @@
 import 'package:audio_traductor/app.dart';
-import 'package:audio_traductor/core/di/injection_container.dart';
-import 'package:audio_traductor/features/translation/data/datasources/tts_datasource.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:record/record.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // ── Inicializar Hive ──
+  // Es lo único que corre antes de `runApp`: es rápido y todo lo demás
+  // (dependencias, TTS, permisos) necesita que ya haya UI en pantalla.
   await Hive.initFlutter();
 
-  // ── Inicializar dependencias ──
-  await InjectionContainer.init();
-
-  // ── Solicitar permisos al iniciar ──
-  // Micrófono
-  final recorder = AudioRecorder();
-  final hasMic = await recorder.hasPermission();
-  if (!hasMic) {
-    try {
-      final stream = await recorder.startStream(
-        const RecordConfig(encoder: AudioEncoder.pcm16bits, numChannels: 1, sampleRate: 16000),
-      );
-      stream.listen(null).cancel();
-      await recorder.stop();
-    } catch (_) {}
-  }
-
-  // BLUETOOTH_CONNECT (necesario para desconectar HFP y usar mic del celu)
-  await Permission.bluetoothConnect.request();
-
-  // ── Pre-calentar TTS ──
-  RealTtsDatasource.instance.warmup('en', 'en-US-Wavenet-D');
-
   // ── Arrancar la app ──
+  // El resto de la inicialización sucede dentro de la pantalla de carga
+  // (ver `AppBootstrap`), para que el usuario vea la animación de marca
+  // en vez de un arranque en blanco.
   runApp(
     const ProviderScope(
       child: AudioTraductorApp(),

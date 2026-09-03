@@ -68,21 +68,57 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.3
   flutter_native_splash: ^2.4.4
 
+
 flutter:
   uses-material-design: true
 
+  # Se declaran los directorios enteros: así se puede reemplazar o agregar
+  # arte de marca sin volver a tocar este archivo.
+  assets:
+    - assets/
+    - assets/brand/
+    - assets/icon/
+
+# ── Icono de la app ─────────────────────────────────────────────────
+#
+# iOS 18+: el sistema cambia solo entre el icono claro y el oscuro según el
+# modo del dispositivo (`image_path_ios_dark_transparent` y la variante
+# teñida). Android no ofrece ese cambio automático: lo más cercano es el
+# "icono con tema" de Android 13+, que tiñe la capa `adaptive_icon_monochrome`
+# con la paleta del sistema cuando el usuario activa esa opción.
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon-traductor.png"
+  image_path: "assets/icon/app-icon-light.png"
+  image_path_android: "assets/icon/app-icon-light.png"
+  image_path_ios: "assets/icon/app-icon-light.png"
+  # iOS 18: variantes oscura y teñida del icono.
+  image_path_ios_dark_transparent: "assets/icon/app-icon-dark.png"
+  image_path_ios_tinted_grayscale: "assets/icon/app-icon-dark.png"
   remove_alpha_ios: true
+  # Android 13+: para habilitar el "icono con tema" hacen falta dos PNG
+  # extra dibujados con zona segura (el arte ocupa el 66% central, el resto
+  # transparente). Con el arte actual a sangre el recorte queda mal, así que
+  # queda documentado y desactivado:
+  # adaptive_icon_background: "#FFFFFF"
+  # adaptive_icon_foreground: "assets/icon/app-icon-foreground.png"
+  # adaptive_icon_monochrome: "assets/icon/app-icon-monochrome.png"
 
+# ── Splash nativo ───────────────────────────────────────────────────
+#
+# Es el fondo que pinta el sistema operativo mientras arranca el proceso,
+# antes del primer frame de Flutter. Se mantiene mínimo y del color del tema
+# para que empalme sin salto con la pantalla de carga animada de la app.
 flutter_native_splash:
-  background_image: assets/splash-bg.png
+  color: "#E8F0FE"
+  color_dark: "#0A1628"
   image: assets/icon-sf-splash.png
+  image_dark: assets/icon-sf-splash.png
   android: true
   ios: true
   web: false
   android_12:
-    color: "#c8e6f5"
+    color: "#E8F0FE"
+    color_dark: "#0A1628"
     image: assets/icon-sf-splash.png
+    image_dark: assets/icon-sf-splash.png

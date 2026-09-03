@@ -1,6 +1,8 @@
+import 'package:audio_traductor/core/branding/mavric_footer.dart';
 import 'package:audio_traductor/core/services/tab_index_provider.dart';
 import 'package:audio_traductor/core/theme/app_theme.dart';
 import 'package:audio_traductor/core/theme/liquid_glass/glass_nav_bar.dart';
+import 'package:audio_traductor/features/onboarding/presentation/screens/app_bootstrap.dart';
 import 'package:audio_traductor/features/translation/presentation/providers/theme_provider.dart';
 import 'package:audio_traductor/features/translation/presentation/providers/translation_provider.dart';
 import 'package:audio_traductor/features/translation/presentation/screens/home_screen.dart';
@@ -27,8 +29,8 @@ class AudioTraductorApp extends ConsumerWidget {
       darkTheme: AppTheme.dark(seedColor),
       themeMode: themeMode,
 
-      // ── Home con BottomNavigation ──
-      home: const MainShell(),
+      // ── Arranque: carga → términos (1ra vez) → shell con BottomNavigation ──
+      home: const AppBootstrap(),
     );
   }
 }
@@ -105,34 +107,42 @@ class _MainShellState extends ConsumerState<MainShell> with WidgetsBindingObserv
             index: currentIndex,
             children: _screens,
           ),
-          bottomNavigationBar: GlassNavBar(
-            currentIndex: currentIndex,
-            onDestinationSelected: (index) {
-              // Pausar traducción si se sale de la pestaña Traductor
-              if (currentIndex == 0 && index != 0) {
-                ref.read(translationProvider.notifier).stopTranslation();
-              }
-              ref.read(tabIndexProvider.notifier).state = index;
-              // Refrescar historial cada vez que se entra a la pestaña
-              if (index == 1) {
-                ref.invalidate(historyProvider);
-              }
-            },
-            items: const [
-              GlassNavItem(
-                icon: Icons.translate_outlined,
-                selectedIcon: Icons.translate,
-                label: 'Traductor',
-              ),
-              GlassNavItem(
-                icon: Icons.history_outlined,
-                selectedIcon: Icons.history,
-                label: 'Historial',
-              ),
-              GlassNavItem(
-                icon: Icons.settings_outlined,
-                selectedIcon: Icons.settings,
-                label: 'Ajustes',
+          // El crédito de Mavric vive acá y no en cada pantalla: así aparece
+          // igual en Traductor, Historial y Ajustes sin tocar sus layouts.
+          bottomNavigationBar: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const MavricFooter(),
+              GlassNavBar(
+                currentIndex: currentIndex,
+                onDestinationSelected: (index) {
+                  // Pausar traducción si se sale de la pestaña Traductor
+                  if (currentIndex == 0 && index != 0) {
+                    ref.read(translationProvider.notifier).stopTranslation();
+                  }
+                  ref.read(tabIndexProvider.notifier).state = index;
+                  // Refrescar historial cada vez que se entra a la pestaña
+                  if (index == 1) {
+                    ref.invalidate(historyProvider);
+                  }
+                },
+                items: const [
+                  GlassNavItem(
+                    icon: Icons.translate_outlined,
+                    selectedIcon: Icons.translate,
+                    label: 'Traductor',
+                  ),
+                  GlassNavItem(
+                    icon: Icons.history_outlined,
+                    selectedIcon: Icons.history,
+                    label: 'Historial',
+                  ),
+                  GlassNavItem(
+                    icon: Icons.settings_outlined,
+                    selectedIcon: Icons.settings,
+                    label: 'Ajustes',
+                  ),
+                ],
               ),
             ],
           ),
