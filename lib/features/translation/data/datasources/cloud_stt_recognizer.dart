@@ -15,7 +15,7 @@ class CloudSttRecognizer {
   Future<String> recognize(
     List<int> pcmData,
     String languageCode, {
-    Duration timeout = const Duration(seconds: 6),
+    Duration timeout = const Duration(seconds: 8),
   }) async {
     if (!ApiConstants.hasSttKey) {
       throw const ServerException(
@@ -37,9 +37,9 @@ class CloudSttRecognizer {
               'encoding': 'LINEAR16',
               'sampleRateHertz': 16000,
               'languageCode': _mapLanguage(languageCode),
-              // Los bloques duran como máximo 3,2 s; latest_short está
-              // optimizado para frases breves y responde antes que long.
-              'model': 'latest_short',
+              // Una exposición es dictado continuo. latest_long conserva
+              // mejor el contexto y las palabras al final de cada bloque.
+              'model': 'latest_long',
               'enableAutomaticPunctuation': true,
               'maxAlternatives': 1,
             },

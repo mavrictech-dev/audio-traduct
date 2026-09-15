@@ -10,14 +10,17 @@ import 'package:flutter/services.dart';
 /// transcribe el bloque, solo con CUÁNDO un bloque de audio está listo para
 /// mandarse a reconocer.
 class SilenceGatedCapture {
-  // 380 ms conserva pausas naturales, pero recorta ~220 ms frente al valor
-  // anterior. Los bloques largos se entregan aunque el expositor no pause.
-  static const _silenceThresholdMs = 380;
-  static const _maxUtteranceMs = 3200;
-  static const _preRollMs = 180;
-  static const _tailMs = 100;
-  static const _minSpeechMs = 140;
-  static const _rmsThreshold = 450;
+  // Para no amputar palabras suaves al final, esperamos una pausa completa y
+  // enviamos TODO el audio capturado, incluido el silencio final. A partir de
+  // 5 s aprovechamos una pausa breve para mantener baja la latencia; solo
+  // forzamos un corte tras 30 s de voz totalmente continua.
+  static const _silenceThresholdMs = 650;
+  static const _preferredUtteranceMs = 5000;
+  static const _boundarySilenceMs = 250;
+  static const _hardUtteranceMs = 30000;
+  static const _preRollMs = 300;
+  static const _minSpeechMs = 100;
+  static const _rmsThreshold = 300;
   static const sampleRate = 16000;
   static const _audioChannel = MethodChannel('com.audiotraductor/audio');
   static const _micChannel = EventChannel('com.audiotraductor/mic');
@@ -104,7 +107,11 @@ class SilenceGatedCapture {
 
     final silenceMs = _silenceSamples * 1000 ~/ sampleRate;
     final utteranceMs = _utteranceSamples * 1000 ~/ sampleRate;
-    if (silenceMs >= _silenceThresholdMs || utteranceMs >= _maxUtteranceMs) {
+    final reachedSafeBoundary =
+        utteranceMs >= _preferredUtteranceMs && silenceMs >= _boundarySilenceMs;
+    if (silenceMs >= _silenceThresholdMs ||
+        reachedSafeBoundary ||
+        utteranceMs >= _hardUtteranceMs) {
       _flushBatch();
     }
   }
@@ -128,20 +135,14 @@ class SilenceGatedCapture {
     return count > 0 ? sum / count : 0.0;
   }
 
-  void _flushBatch() {
-    if (_buffer.isEmpty || _stopping) return;
+  void _flushBatch({bool allowWhileStopping = false}) {
+    if (_buffer.isEmpty || (_stopping && !allowWhileStopping)) return;
 
     final minimumSpeechSamples = sampleRate * _minSpeechMs ~/ 1000;
-    final keepTailSamples = sampleRate * _tailMs ~/ 1000;
-    final removableSilenceSamples = (_silenceSamples - keepTailSamples)
-        .clamp(0, _silenceSamples)
-        .toInt();
-    final trimmedLength = (_buffer.length - removableSilenceSamples * 2)
-        .clamp(0, _buffer.length)
-        .toInt();
-
     final pcmData = _speechSamples >= minimumSpeechSamples
-        ? List<int>.from(_buffer.take(trimmedLength))
+        // No recortar la cola: una sílaba final suave puede caer por debajo
+        // del umbral y parecer silencio aunque todavía sea parte de la palabra.
+        ? List<int>.from(_buffer)
         : const <int>[];
     _buffer.clear();
     _preRollBuffer.clear();
@@ -153,13 +154,18 @@ class SilenceGatedCapture {
   }
 
   Future<void> stop() async {
-    _stopping = true;
+    if (_stopping) return;
     AudioLevelService.instance.reset();
     await _micSub?.cancel();
     _micSub = null;
     try {
       await _audioChannel.invokeMethod('stopRecording');
     } catch (_) {}
+
+    // Entregar la frase que quedó abierta antes de cerrar el stream. El
+    // consumidor mantiene su listener hasta que este último bloque termine.
+    _flushBatch(allowWhileStopping: true);
+    _stopping = true;
     await _batchController?.close();
     _batchController = null;
     _buffer.clear();

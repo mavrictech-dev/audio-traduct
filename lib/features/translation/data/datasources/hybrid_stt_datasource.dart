@@ -30,7 +30,8 @@ class HybridSttDatasource implements SttDatasource {
   bool _stopping = false;
   Future<void>? _recognitionQueue;
 
-  HybridSttDatasource({WhisperRecognizer? whisper}) : _whisper = whisper ?? WhisperRecognizer();
+  HybridSttDatasource({WhisperRecognizer? whisper})
+    : _whisper = whisper ?? WhisperRecognizer();
 
   @override
   Stream<SttResult> startStreaming({
@@ -67,11 +68,9 @@ class HybridSttDatasource implements SttDatasource {
     final transcript = await _recognizeWithFallback(pcmData);
     if (_stopping || transcript == null || transcript.isEmpty) return;
 
-    _controller?.add(SttResult(
-      transcript: transcript,
-      isFinal: true,
-      confidence: 1.0,
-    ));
+    _controller?.add(
+      SttResult(transcript: transcript, isFinal: true, confidence: 1.0),
+    );
   }
 
   /// Intenta nube primero (si hay conexión); ante CUALQUIER falla —sin key,
@@ -100,7 +99,8 @@ class HybridSttDatasource implements SttDatasource {
   Future<bool> _isOnline() async {
     try {
       final results = await Connectivity().checkConnectivity();
-      return results.isNotEmpty && results.any((r) => r != ConnectivityResult.none);
+      return results.isNotEmpty &&
+          results.any((r) => r != ConnectivityResult.none);
     } catch (_) {
       return false;
     }
@@ -108,11 +108,17 @@ class HybridSttDatasource implements SttDatasource {
 
   @override
   Future<void> stop() async {
+    if (_stopping) return;
+
+    // La captura emite primero la frase que todavía estaba abierta. Mantener
+    // el listener y la cola activos evita perder las últimas palabras.
+    await _capture.stop();
+    await _recognitionQueue;
+
     _stopping = true;
     await _batchSub?.cancel();
     _batchSub = null;
     _recognitionQueue = null;
-    await _capture.stop();
     await _controller?.close();
     _controller = null;
   }
@@ -121,7 +127,9 @@ class HybridSttDatasource implements SttDatasource {
 
   Future<bool> isSttModelDownloaded() => _whisper.isModelDownloaded();
 
-  Future<void> downloadSttModel({required void Function(double progress) onProgress}) {
+  Future<void> downloadSttModel({
+    required void Function(double progress) onProgress,
+  }) {
     return _whisper.downloadModel(onProgress: onProgress);
   }
 }

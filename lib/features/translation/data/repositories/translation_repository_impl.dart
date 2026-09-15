@@ -31,6 +31,7 @@ class TranslationRepositoryImpl implements TranslationRepository {
   Future<void>? _showQueue; // cola A: traduce → muestra (orden estricto)
   Future<void>? _ttsQueue; // cola B: audio (orden estricto, independiente de A)
   Future<void>? _persistQueue; // cola C: disco, nunca bloquea pantalla/TTS
+  final Set<Future<void>> _pendingTranslations = {};
   bool _stopped = false;
   int _nextSequence = 0;
   int _nextToFlush = 0;
@@ -60,6 +61,7 @@ class TranslationRepositoryImpl implements TranslationRepository {
     _showQueue = null;
     _ttsQueue = null;
     _persistQueue = null;
+    _pendingTranslations.clear();
     _sttSubscription = null;
     _chunkController = null;
     _paragraphs = [];
@@ -95,110 +97,122 @@ class TranslationRepositoryImpl implements TranslationRepository {
       languageCode: sourceLanguage,
     );
 
-    _sttSubscription = sttStream.listen(
-      (sttResult) {
-        if (sttResult.transcript.isEmpty || _stopped) return;
+    _sttSubscription = sttStream.listen((sttResult) {
+      if (sttResult.transcript.isEmpty || _stopped) return;
 
-        // Solo traducir cuando el STT confirma que es final.
-        if (!sttResult.isFinal) {
-          _chunkController?.add(
-            TranslationChunk(
-              originalText: sttResult.transcript,
-              translatedText: '',
-              isFinal: false,
-            ),
-          );
-          return;
-        }
-
-        final sequence = _nextSequence++;
-
-        // La traducción puede correr en paralelo, PERO el mostrado y el audio
-        // se respetan por orden de secuencia. Si el 3 termina antes que el 2,
-        // se guarda y espera a que el 2 esté listo.
-        //
-        // IMPORTANTE: si la traducción falla, el párrafo original NO se
-        // descarta — se guarda igual con translatedText vacío. Antes, un
-        // catchError((_){}) acá tragaba el error y la transcripción entera
-        // desaparecía sin dejar rastro, ni en pantalla ni en el historial.
-        unawaited(
-          _translate
-              .translate(
-                text: sttResult.transcript,
-                sourceLanguage: sourceLanguage,
-                targetLanguage: targetLanguage,
-              )
-              .then((translateResult) => translateResult.translatedText)
-              .catchError((_) => '')
-              .then((translatedText) {
-                if (_stopped) return;
-
-                _readyParagraphs[sequence] = _QueuedParagraph(
-                  originalText: sttResult.transcript,
-                  translatedText: translatedText,
-                  sourceLanguage: sourceLanguage,
-                  targetLanguage: targetLanguage,
-                  timestamp: DateTime.now(),
-                );
-
-                _showQueue = (_showQueue ?? Future.value())
-                    .then((_) async {
-                      while (!_stopped &&
-                          _readyParagraphs.containsKey(_nextToFlush)) {
-                        final item = _readyParagraphs.remove(_nextToFlush)!;
-
-                        _paragraphs.add(
-                          TranslationParagraph(
-                            id: 'p${_paragraphs.length + 1}',
-                            originalText: item.originalText,
-                            translatedText: item.translatedText,
-                            sourceLanguage: item.sourceLanguage,
-                            targetLanguage: item.targetLanguage,
-                            timestamp: item.timestamp,
-                          ),
-                        );
-                        _chunkController?.add(
-                          TranslationChunk(
-                            originalText: item.originalText,
-                            translatedText: item.translatedText,
-                            isFinal: true,
-                          ),
-                        );
-
-                        // Sin traducción no hay nada que hablar — pero el párrafo ya
-                        // quedó visible y guardado arriba de todos modos.
-                        if (item.translatedText.isNotEmpty) {
-                          _ttsQueue = (_ttsQueue ?? Future.value())
-                              .then((_) async {
-                                if (_stopped) return;
-                                await _tts.synthesize(
-                                  text: item.translatedText,
-                                  voiceName: voiceName,
-                                  languageCode: targetLanguage,
-                                  speed: _speed,
-                                );
-                              })
-                              .catchError((_) {});
-                        }
-
-                        // Guardar el historial después de mostrar y encolar la voz.
-                        // Hive ya no añade latencia al camino crítico de traducción.
-                        _persistQueue = (_persistQueue ?? Future.value())
-                            .then((_) => _persistCurrentSession())
-                            .catchError((_) {});
-
-                        _nextToFlush++;
-                      }
-                    })
-                    .catchError((_) {});
-              }),
+      // Solo traducir cuando el STT confirma que es final.
+      if (!sttResult.isFinal) {
+        _chunkController?.add(
+          TranslationChunk(
+            originalText: sttResult.transcript,
+            translatedText: '',
+            isFinal: false,
+          ),
         );
-      },
-      onError: (e) => _chunkController?.addError(e),
-      onDone: () => _chunkController?.close(),
-    );
+        return;
+      }
+
+      final sequence = _nextSequence++;
+
+      // La traducción puede correr en paralelo, PERO el mostrado y el audio
+      // se respetan por orden de secuencia. Si el 3 termina antes que el 2,
+      // se guarda y espera a que el 2 esté listo.
+      //
+      // IMPORTANTE: si la traducción falla, el párrafo original NO se
+      // descarta — se guarda igual con translatedText vacío. Antes, un
+      // catchError((_){}) acá tragaba el error y la transcripción entera
+      // desaparecía sin dejar rastro, ni en pantalla ni en el historial.
+      final translationTask = _translateAndQueue(
+        sequence: sequence,
+        originalText: sttResult.transcript,
+        sourceLanguage: sourceLanguage,
+        targetLanguage: targetLanguage,
+        voiceName: voiceName,
+      );
+      _pendingTranslations.add(translationTask);
+      unawaited(
+        translationTask.whenComplete(
+          () => _pendingTranslations.remove(translationTask),
+        ),
+      );
+    }, onError: (e) => _chunkController?.addError(e));
 
     yield* _chunkController!.stream;
+  }
+
+  Future<void> _translateAndQueue({
+    required int sequence,
+    required String originalText,
+    required String sourceLanguage,
+    required String targetLanguage,
+    required String voiceName,
+  }) async {
+    var translatedText = '';
+    try {
+      final result = await _translate.translate(
+        text: originalText,
+        sourceLanguage: sourceLanguage,
+        targetLanguage: targetLanguage,
+      );
+      translatedText = result.translatedText;
+    } catch (_) {
+      // El texto original se conserva aunque falle la traducción.
+    }
+    if (_stopped) return;
+
+    _readyParagraphs[sequence] = _QueuedParagraph(
+      originalText: originalText,
+      translatedText: translatedText,
+      sourceLanguage: sourceLanguage,
+      targetLanguage: targetLanguage,
+      timestamp: DateTime.now(),
+    );
+
+    _showQueue = (_showQueue ?? Future.value())
+        .then((_) async {
+          while (!_stopped && _readyParagraphs.containsKey(_nextToFlush)) {
+            final item = _readyParagraphs.remove(_nextToFlush)!;
+            _paragraphs.add(
+              TranslationParagraph(
+                id: 'p${_paragraphs.length + 1}',
+                originalText: item.originalText,
+                translatedText: item.translatedText,
+                sourceLanguage: item.sourceLanguage,
+                targetLanguage: item.targetLanguage,
+                timestamp: item.timestamp,
+              ),
+            );
+            _chunkController?.add(
+              TranslationChunk(
+                originalText: item.originalText,
+                translatedText: item.translatedText,
+                isFinal: true,
+              ),
+            );
+
+            if (item.translatedText.isNotEmpty) {
+              _ttsQueue = (_ttsQueue ?? Future.value())
+                  .then((_) async {
+                    if (_stopped) return;
+                    await _tts.synthesize(
+                      text: item.translatedText,
+                      voiceName: voiceName,
+                      languageCode: targetLanguage,
+                      speed: _speed,
+                    );
+                  })
+                  .catchError((_) {});
+            }
+
+            _persistQueue = (_persistQueue ?? Future.value())
+                .then((_) => _persistCurrentSession())
+                .catchError((_) {});
+            _nextToFlush++;
+          }
+        })
+        .catchError((_) {});
+
+    await _showQueue;
   }
 
   Future<void> _persistCurrentSession() async {
@@ -217,25 +231,31 @@ class TranslationRepositoryImpl implements TranslationRepository {
   @override
   Future<Either<Failure, TranslationSession>> stopTranslation() async {
     try {
-      // Marcar como detenido ANTES de cancelar, así los callbacks
-      // async pendientes ven la bandera y no procesan nada más.
-      _stopped = true;
-
-      // 1. Detener el micrófono — no más párrafos nuevos
+      // 1. Detener la captura de forma elegante. El STT entrega y reconoce
+      // primero la frase todavía abierta.
       await _stt.stop();
+
+      // 2. Esperar traducción, visualización, lectura y guardado del último
+      // bloque antes de invalidar callbacks o cerrar streams.
+      if (_pendingTranslations.isNotEmpty) {
+        await Future.wait(List<Future<void>>.from(_pendingTranslations));
+      }
+      await _showQueue;
+      await _ttsQueue;
+      await _persistQueue;
+
+      _stopped = true;
       await _sttSubscription?.cancel();
       _sttSubscription = null;
 
-      // 2. Cerrar el controller del chunk stream para que nadie más escuche
+      // 3. Cerrar streams y liberar recursos una vez drenadas las colas.
       await _chunkController?.close();
       _chunkController = null;
-
-      // 3. Cortar TTS en curso y limpiar colas
-      _tts.stop();
+      await _tts.stop();
       _showQueue = null;
       _ttsQueue = null;
-      await _persistQueue;
       _persistQueue = null;
+      _pendingTranslations.clear();
       _readyParagraphs.clear();
       _nextSequence = 0;
       _nextToFlush = 0;
