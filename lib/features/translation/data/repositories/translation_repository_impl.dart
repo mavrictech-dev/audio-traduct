@@ -30,6 +30,7 @@ class TranslationRepositoryImpl implements TranslationRepository {
   double _speed = 0.5;
   Future<void>? _showQueue; // cola A: traduce → muestra (orden estricto)
   Future<void>? _ttsQueue; // cola B: audio (orden estricto, independiente de A)
+  Future<void>? _persistQueue; // cola C: disco, nunca bloquea pantalla/TTS
   bool _stopped = false;
   int _nextSequence = 0;
   int _nextToFlush = 0;
@@ -40,10 +41,10 @@ class TranslationRepositoryImpl implements TranslationRepository {
     required TranslateDatasource translate,
     required TtsDatasource tts,
     required TranslationLocalDatasource local,
-  })  : _stt = stt,
-        _translate = translate,
-        _tts = tts,
-        _local = local;
+  }) : _stt = stt,
+       _translate = translate,
+       _tts = tts,
+       _local = local;
 
   @override
   Stream<TranslationChunk> startTranslation({
@@ -58,6 +59,7 @@ class TranslationRepositoryImpl implements TranslationRepository {
     _stopped = false;
     _showQueue = null;
     _ttsQueue = null;
+    _persistQueue = null;
     _sttSubscription = null;
     _chunkController = null;
     _paragraphs = [];
@@ -72,7 +74,9 @@ class TranslationRepositoryImpl implements TranslationRepository {
     _speed = speed;
 
     // Guardar nombre personalizado
-    _sessionName = sessionName ?? 'Sesión ${DateFormat('dd/MM HH:mm').format(DateTime.now())}';
+    _sessionName =
+        sessionName ??
+        'Sesión ${DateFormat('dd/MM HH:mm').format(DateTime.now())}';
 
     // Manejar sesión
     if (existingSessionId != null && existingSessionId != '_new_') {
@@ -97,11 +101,13 @@ class TranslationRepositoryImpl implements TranslationRepository {
 
         // Solo traducir cuando el STT confirma que es final.
         if (!sttResult.isFinal) {
-          _chunkController?.add(TranslationChunk(
-            originalText: sttResult.transcript,
-            translatedText: '',
-            isFinal: false,
-          ));
+          _chunkController?.add(
+            TranslationChunk(
+              originalText: sttResult.transcript,
+              translatedText: '',
+              isFinal: false,
+            ),
+          );
           return;
         }
 
@@ -115,59 +121,78 @@ class TranslationRepositoryImpl implements TranslationRepository {
         // descarta — se guarda igual con translatedText vacío. Antes, un
         // catchError((_){}) acá tragaba el error y la transcripción entera
         // desaparecía sin dejar rastro, ni en pantalla ni en el historial.
-        unawaited(_translate.translate(
-          text: sttResult.transcript,
-          sourceLanguage: sourceLanguage,
-          targetLanguage: targetLanguage,
-        ).then((translateResult) => translateResult.translatedText).catchError((_) => '').then((translatedText) {
-          if (_stopped) return;
+        unawaited(
+          _translate
+              .translate(
+                text: sttResult.transcript,
+                sourceLanguage: sourceLanguage,
+                targetLanguage: targetLanguage,
+              )
+              .then((translateResult) => translateResult.translatedText)
+              .catchError((_) => '')
+              .then((translatedText) {
+                if (_stopped) return;
 
-          _readyParagraphs[sequence] = _QueuedParagraph(
-            originalText: sttResult.transcript,
-            translatedText: translatedText,
-            sourceLanguage: sourceLanguage,
-            targetLanguage: targetLanguage,
-            timestamp: DateTime.now(),
-          );
+                _readyParagraphs[sequence] = _QueuedParagraph(
+                  originalText: sttResult.transcript,
+                  translatedText: translatedText,
+                  sourceLanguage: sourceLanguage,
+                  targetLanguage: targetLanguage,
+                  timestamp: DateTime.now(),
+                );
 
-          _showQueue = (_showQueue ?? Future.value()).then((_) async {
-            while (!_stopped && _readyParagraphs.containsKey(_nextToFlush)) {
-              final item = _readyParagraphs.remove(_nextToFlush)!;
+                _showQueue = (_showQueue ?? Future.value())
+                    .then((_) async {
+                      while (!_stopped &&
+                          _readyParagraphs.containsKey(_nextToFlush)) {
+                        final item = _readyParagraphs.remove(_nextToFlush)!;
 
-              _paragraphs.add(TranslationParagraph(
-                id: 'p${_paragraphs.length + 1}',
-                originalText: item.originalText,
-                translatedText: item.translatedText,
-                sourceLanguage: item.sourceLanguage,
-                targetLanguage: item.targetLanguage,
-                timestamp: item.timestamp,
-              ));
-              await _persistCurrentSession();
+                        _paragraphs.add(
+                          TranslationParagraph(
+                            id: 'p${_paragraphs.length + 1}',
+                            originalText: item.originalText,
+                            translatedText: item.translatedText,
+                            sourceLanguage: item.sourceLanguage,
+                            targetLanguage: item.targetLanguage,
+                            timestamp: item.timestamp,
+                          ),
+                        );
+                        _chunkController?.add(
+                          TranslationChunk(
+                            originalText: item.originalText,
+                            translatedText: item.translatedText,
+                            isFinal: true,
+                          ),
+                        );
 
-              _chunkController?.add(TranslationChunk(
-                originalText: item.originalText,
-                translatedText: item.translatedText,
-                isFinal: true,
-              ));
+                        // Sin traducción no hay nada que hablar — pero el párrafo ya
+                        // quedó visible y guardado arriba de todos modos.
+                        if (item.translatedText.isNotEmpty) {
+                          _ttsQueue = (_ttsQueue ?? Future.value())
+                              .then((_) async {
+                                if (_stopped) return;
+                                await _tts.synthesize(
+                                  text: item.translatedText,
+                                  voiceName: voiceName,
+                                  languageCode: targetLanguage,
+                                  speed: _speed,
+                                );
+                              })
+                              .catchError((_) {});
+                        }
 
-              // Sin traducción no hay nada que hablar — pero el párrafo ya
-              // quedó visible y guardado arriba de todos modos.
-              if (item.translatedText.isNotEmpty) {
-                _ttsQueue = (_ttsQueue ?? Future.value()).then((_) async {
-                  if (_stopped) return;
-                  await _tts.synthesize(
-                    text: item.translatedText,
-                    voiceName: voiceName,
-                    languageCode: targetLanguage,
-                    speed: _speed,
-                  );
-                }).catchError((_) {});
-              }
+                        // Guardar el historial después de mostrar y encolar la voz.
+                        // Hive ya no añade latencia al camino crítico de traducción.
+                        _persistQueue = (_persistQueue ?? Future.value())
+                            .then((_) => _persistCurrentSession())
+                            .catchError((_) {});
 
-              _nextToFlush++;
-            }
-          }).catchError((_) {});
-        }));
+                        _nextToFlush++;
+                      }
+                    })
+                    .catchError((_) {});
+              }),
+        );
       },
       onError: (e) => _chunkController?.addError(e),
       onDone: () => _chunkController?.close(),
@@ -209,6 +234,8 @@ class TranslationRepositoryImpl implements TranslationRepository {
       _tts.stop();
       _showQueue = null;
       _ttsQueue = null;
+      await _persistQueue;
+      _persistQueue = null;
       _readyParagraphs.clear();
       _nextSequence = 0;
       _nextToFlush = 0;
@@ -216,19 +243,23 @@ class TranslationRepositoryImpl implements TranslationRepository {
       final durationMs = DateTime.now().millisecondsSinceEpoch - _startTimeMs;
 
       final saved = await _local.getSession(_currentSessionId);
-      final session = saved?.toEntity() ?? TranslationSession(
-        id: _currentSessionId,
-        sourceLanguage: _sourceLanguage,
-        targetLanguage: _targetLanguage,
-        paragraphs: List.from(_paragraphs),
-        createdAt: DateTime.now(),
-        durationMs: durationMs,
-      );
+      final session =
+          saved?.toEntity() ??
+          TranslationSession(
+            id: _currentSessionId,
+            sourceLanguage: _sourceLanguage,
+            targetLanguage: _targetLanguage,
+            paragraphs: List.from(_paragraphs),
+            createdAt: DateTime.now(),
+            durationMs: durationMs,
+          );
 
       _paragraphs = [];
       return Right(session);
     } on Exception catch (e) {
-      return Left(UnexpectedFailure(message: 'Error al detener', originalError: e));
+      return Left(
+        UnexpectedFailure(message: 'Error al detener', originalError: e),
+      );
     }
   }
 
@@ -238,7 +269,12 @@ class TranslationRepositoryImpl implements TranslationRepository {
       final model = await _local.getSession(id);
       return Right(model?.toEntity());
     } on Exception catch (e) {
-      return Left(StorageFailure(message: 'Error al obtener sesión', originalError: e as Object?));
+      return Left(
+        StorageFailure(
+          message: 'Error al obtener sesión',
+          originalError: e as Object?,
+        ),
+      );
     }
   }
 
@@ -248,12 +284,20 @@ class TranslationRepositoryImpl implements TranslationRepository {
       final models = await _local.getAllSessions();
       return Right(models.map((m) => m.toEntity()).toList());
     } on Exception catch (e) {
-      return Left(StorageFailure(message: 'Error al obtener historial', originalError: e as Object?));
+      return Left(
+        StorageFailure(
+          message: 'Error al obtener historial',
+          originalError: e as Object?,
+        ),
+      );
     }
   }
 
   @override
-  Future<Either<Failure, void>> renameSession(String sessionId, String newName) async {
+  Future<Either<Failure, void>> renameSession(
+    String sessionId,
+    String newName,
+  ) async {
     try {
       await _local.renameSession(sessionId, newName);
       // Si la sesión que se está renombrando es la actual, reflejarlo ya
@@ -264,7 +308,12 @@ class TranslationRepositoryImpl implements TranslationRepository {
       }
       return const Right(null);
     } on Exception catch (e) {
-      return Left(StorageFailure(message: 'Error al renombrar', originalError: e as Object?));
+      return Left(
+        StorageFailure(
+          message: 'Error al renombrar',
+          originalError: e as Object?,
+        ),
+      );
     }
   }
 
@@ -274,7 +323,12 @@ class TranslationRepositoryImpl implements TranslationRepository {
       await _local.deleteSession(sessionId);
       return const Right(null);
     } on Exception catch (e) {
-      return Left(StorageFailure(message: 'Error al eliminar', originalError: e as Object?));
+      return Left(
+        StorageFailure(
+          message: 'Error al eliminar',
+          originalError: e as Object?,
+        ),
+      );
     }
   }
 
@@ -284,7 +338,12 @@ class TranslationRepositoryImpl implements TranslationRepository {
       await _local.clearAll();
       return const Right(null);
     } on Exception catch (e) {
-      return Left(StorageFailure(message: 'Error al limpiar', originalError: e as Object?));
+      return Left(
+        StorageFailure(
+          message: 'Error al limpiar',
+          originalError: e as Object?,
+        ),
+      );
     }
   }
 }

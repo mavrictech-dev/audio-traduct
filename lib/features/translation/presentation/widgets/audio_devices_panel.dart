@@ -50,6 +50,14 @@ class _AudioDevicesPanelState extends ConsumerState<AudioDevicesPanel> {
     final bt = ref.watch(bluetoothProvider);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final selectedInput = ds.devices.cast<AudioDevice?>().firstWhere(
+      (device) => device?.id == ds.selectedInputId,
+      orElse: () => null,
+    );
+    final selectedOutput = ds.devices.cast<AudioDevice?>().firstWhere(
+      (device) => device?.id == ds.selectedOutputId,
+      orElse: () => null,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -58,20 +66,36 @@ class _AudioDevicesPanelState extends ConsumerState<AudioDevicesPanel> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           visualDensity: VisualDensity.compact,
-          title: Text('Bluetooth', style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500)),
+          title: Text(
+            'Bluetooth',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           subtitle: Text(
             bt.isAdapterOn
                 ? 'Activado'
                 : 'Abrir ajustes Bluetooth para activar y conectar',
-            style: TextStyle(fontSize: 12, color: bt.isAdapterOn ? Colors.green : colorScheme.onSurfaceVariant),
+            style: TextStyle(
+              fontSize: 12,
+              color: bt.isAdapterOn
+                  ? Colors.green
+                  : colorScheme.onSurfaceVariant,
+            ),
           ),
           value: bt.isAdapterOn,
           onChanged: (v) {
-            if (v) ref.read(bluetoothProvider.notifier).openSystemBluetoothSettings();
+            if (v) {
+              ref
+                  .read(bluetoothProvider.notifier)
+                  .openSystemBluetoothSettings();
+            }
           },
           secondary: Icon(
             Icons.bluetooth,
-            color: bt.isAdapterOn ? colorScheme.primary : colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+            color: bt.isAdapterOn
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
         ),
         const Divider(),
@@ -83,7 +107,8 @@ class _AudioDevicesPanelState extends ConsumerState<AudioDevicesPanel> {
           devices: ds.devices.where((d) => d.isInput).toList(),
           selectedId: ds.selectedInputId,
           iconFor: _iconFor,
-          onChanged: (id) => ref.read(audioDevicesProvider.notifier).selectInput(id),
+          onChanged: (id) =>
+              ref.read(audioDevicesProvider.notifier).selectInput(id),
         ),
         const SizedBox(height: 6),
         Text(
@@ -96,7 +121,8 @@ class _AudioDevicesPanelState extends ConsumerState<AudioDevicesPanel> {
         Align(
           alignment: Alignment.centerRight,
           child: TextButton.icon(
-            onPressed: () => ref.read(audioDevicesProvider.notifier).refreshDevices(),
+            onPressed: () =>
+                ref.read(audioDevicesProvider.notifier).refreshDevices(),
             icon: const Icon(Icons.refresh_rounded, size: 16),
             label: const Text('Actualizar micrófonos'),
           ),
@@ -109,12 +135,24 @@ class _AudioDevicesPanelState extends ConsumerState<AudioDevicesPanel> {
         const SizedBox(height: 6),
         ...ds.devices
             .where((d) => d.isOutput)
-            .map((d) => _DeviceTile(
-                  device: d,
-                  icon: _iconFor(d.typeLabel),
-                  isSelected: ds.selectedOutputId == d.id,
-                  onTap: () => ref.read(audioDevicesProvider.notifier).selectOutput(d.id),
-                )),
+            .map(
+              (d) => _DeviceTile(
+                device: d,
+                icon: _iconFor(d.typeLabel),
+                isSelected: ds.selectedOutputId == d.id,
+                onTap: () =>
+                    ref.read(audioDevicesProvider.notifier).selectOutput(d.id),
+              ),
+            ),
+
+        if (selectedInput?.typeLabel.contains('Bluetooth') == true) ...[
+          const SizedBox(height: 8),
+          _BluetoothRouteNotice(
+            isLeAudio: selectedInput!.typeLabel.contains('LE'),
+            hasBluetoothOutput:
+                selectedOutput?.typeLabel.contains('Bluetooth') == true,
+          ),
+        ],
 
         const SizedBox(height: 14),
 
@@ -136,19 +174,34 @@ class _AudioDevicesPanelState extends ConsumerState<AudioDevicesPanel> {
             final name = r.device.platformName.isNotEmpty
                 ? r.device.platformName
                 : r.advertisementData.advName.isNotEmpty
-                    ? r.advertisementData.advName
-                    : id;
+                ? r.advertisementData.advName
+                : id;
             final isConnecting = _connectingBT.contains(id);
 
             return ListTile(
               dense: true,
-              leading: Icon(Icons.bluetooth, size: 20, color: colorScheme.primary),
-              title: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+              leading: Icon(
+                Icons.bluetooth,
+                size: 20,
+                color: colorScheme.primary,
+              ),
+              title: Text(
+                name,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13),
+              ),
               trailing: isConnecting
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : TextButton(
                       onPressed: () => _connectDevice(r),
-                      child: const Text('Conectar', style: TextStyle(fontSize: 11)),
+                      child: const Text(
+                        'Conectar',
+                        style: TextStyle(fontSize: 11),
+                      ),
                     ),
             );
           }),
@@ -173,16 +226,79 @@ class _AudioDevicesPanelState extends ConsumerState<AudioDevicesPanel> {
   }
 
   Widget _sectionLabel(String text, ThemeData theme) {
-    return Text(text, style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.primary));
+    return Text(
+      text,
+      style: theme.textTheme.labelMedium?.copyWith(
+        color: theme.colorScheme.primary,
+      ),
+    );
   }
 
   IconData _iconFor(String typeLabel) {
+    if (typeLabel.contains('Bluetooth')) return Icons.bluetooth_audio_rounded;
     return switch (typeLabel) {
       'Cable' => Icons.headset_mic,
-      'Bluetooth' => Icons.bluetooth,
+      'USB' => Icons.usb_rounded,
       'Integrado' => Icons.speaker,
       _ => Icons.devices,
     };
+  }
+}
+
+class _BluetoothRouteNotice extends StatelessWidget {
+  final bool isLeAudio;
+  final bool hasBluetoothOutput;
+
+  const _BluetoothRouteNotice({
+    required this.isLeAudio,
+    required this.hasBluetoothOutput,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final classicConflict = !isLeAudio && hasBluetoothOutput;
+    final text = classicConflict
+        ? 'Bluetooth clásico activa el modo manos libres para usar el micrófono. Android puede mover la salida al mismo audífono y pausar el altavoz Bluetooth separado. Para una instalación estable usá un micrófono USB/2,4 GHz con el altavoz Bluetooth.'
+        : isLeAudio
+        ? 'Bluetooth LE Audio admite entrada y salida con mejor calidad. La combinación final todavía depende del teléfono y de los dispositivos conectados.'
+        : 'El micrófono Bluetooth usa el modo de comunicación del teléfono; Android puede enviar también la voz al mismo dispositivo.';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color:
+            (classicConflict ? scheme.errorContainer : scheme.tertiaryContainer)
+                .withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: (classicConflict ? scheme.error : scheme.tertiary).withValues(
+            alpha: 0.25,
+          ),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            classicConflict
+                ? Icons.warning_amber_rounded
+                : Icons.bluetooth_audio_rounded,
+            size: 20,
+            color: classicConflict ? scheme.error : scheme.tertiary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -229,10 +345,7 @@ class _InputSelector extends StatelessWidget {
                   Icon(iconFor(device.typeLabel), size: 18),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      device.name,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    child: Text(device.name, overflow: TextOverflow.ellipsis),
                   ),
                   const SizedBox(width: 8),
                   Text(
@@ -280,29 +393,45 @@ class _DeviceTile extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 6),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? colorScheme.primaryContainer.withValues(alpha: 0.4) : null,
+          color: isSelected
+              ? colorScheme.primaryContainer.withValues(alpha: 0.4)
+              : null,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isSelected ? colorScheme.primary.withValues(alpha: 0.5) : Theme.of(context).dividerColor,
+            color: isSelected
+                ? colorScheme.primary.withValues(alpha: 0.5)
+                : Theme.of(context).dividerColor,
             width: isSelected ? 1.5 : 1,
           ),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: isSelected ? colorScheme.primary : null),
+            Icon(
+              icon,
+              size: 20,
+              color: isSelected ? colorScheme.primary : null,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 device.name,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal),
+                style: TextStyle(
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
               ),
             ),
             if (isSelected)
               Icon(Icons.check_circle, size: 20, color: colorScheme.primary)
             else if (device.isConnected)
-              Container(width: 6, height: 6,
-                decoration: const BoxDecoration(color: Colors.greenAccent, shape: BoxShape.circle)),
+              Container(
+                width: 6,
+                height: 6,
+                decoration: const BoxDecoration(
+                  color: Colors.greenAccent,
+                  shape: BoxShape.circle,
+                ),
+              ),
           ],
         ),
       ),

@@ -82,17 +82,20 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
   /// por BT (A2DP) pero el micrófono se queda en el teléfono.
   Future<void> _configureSession() async {
     try {
-      await _session?.configure(a.AudioSessionConfiguration(
-        avAudioSessionCategory: a.AVAudioSessionCategory.playAndRecord,
-        avAudioSessionCategoryOptions: a.AVAudioSessionCategoryOptions.defaultToSpeaker,
-        androidAudioAttributes: const a.AndroidAudioAttributes(
-          contentType: a.AndroidAudioContentType.speech,
-          usage: a.AndroidAudioUsage.media,
+      await _session?.configure(
+        a.AudioSessionConfiguration(
+          avAudioSessionCategory: a.AVAudioSessionCategory.playAndRecord,
+          avAudioSessionCategoryOptions:
+              a.AVAudioSessionCategoryOptions.defaultToSpeaker,
+          androidAudioAttributes: const a.AndroidAudioAttributes(
+            contentType: a.AndroidAudioContentType.speech,
+            usage: a.AndroidAudioUsage.media,
+          ),
+          androidAudioFocusGainType: a.AndroidAudioFocusGainType.gain,
         ),
-        androidAudioFocusGainType: a.AndroidAudioFocusGainType.gain,
-      ));
+      );
       await _session?.setActive(true);
-    await _selectInputOnPlatform(state.selectedInputId ?? 'builtin-mic');
+      await _selectInputOnPlatform(state.selectedInputId ?? 'builtin-mic');
     } catch (_) {}
   }
 
@@ -137,9 +140,11 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
     try {
       const channel = MethodChannel('com.audiotraductor/audio');
       final result = await channel.invokeMethod('getBondedDevices');
-      if (result is List) return List<Map<String, dynamic>>.from(
-        result.map((e) => Map<String, dynamic>.from(e as Map)),
-      );
+      if (result is List) {
+        return List<Map<String, dynamic>>.from(
+          result.map((e) => Map<String, dynamic>.from(e as Map)),
+        );
+      }
     } catch (_) {}
     return [];
   }
@@ -178,7 +183,10 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
   }
 
   /// Rutea el audio al dispositivo seleccionado vía nativo.
-  Future<void> _routeOutput({required String deviceName, required String deviceId}) async {
+  Future<void> _routeOutput({
+    required String deviceName,
+    required String deviceId,
+  }) async {
     try {
       final device = state.devices.where((d) => d.id == deviceId).firstOrNull;
       const channel = MethodChannel('com.audiotraductor/audio');
@@ -188,13 +196,6 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
         'type': device?.typeLabel ?? '',
       });
       await _selectInputOnPlatform(state.selectedInputId ?? 'builtin-mic');
-    } catch (_) {}
-  }
-
-  Future<void> _forceBuiltinMic() async {
-    try {
-      const channel = MethodChannel('com.audiotraductor/audio');
-      await channel.invokeMethod('forceBuiltinMic');
     } catch (_) {}
   }
 
@@ -241,14 +242,16 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
       final name = input['name']?.toString().trim() ?? '';
       if (id.isEmpty || name.isEmpty) continue;
       seen.add(id.toLowerCase());
-      devices.add(AudioDevice(
-        id: id,
-        name: name,
-        isInput: true,
-        isOutput: false,
-        typeLabel: input['type']?.toString() ?? 'Externo',
-        isConnected: true,
-      ));
+      devices.add(
+        AudioDevice(
+          id: id,
+          name: name,
+          isInput: true,
+          isOutput: false,
+          typeLabel: input['type']?.toString() ?? 'Externo',
+          isConnected: true,
+        ),
+      );
     }
 
     for (final d in set) {
@@ -263,14 +266,16 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
       if (seen.contains(d.id.toLowerCase())) continue;
       seen.add(d.id.toLowerCase());
 
-      devices.add(AudioDevice(
-        id: d.id,
-        name: name,
-        isInput: false,
-        isOutput: d.isOutput,
-        typeLabel: _labelFor(typeStr),
-        isConnected: true,
-      ));
+      devices.add(
+        AudioDevice(
+          id: d.id,
+          name: name,
+          isInput: false,
+          isOutput: d.isOutput,
+          typeLabel: _labelFor(typeStr),
+          isConnected: true,
+        ),
+      );
     }
 
     // Agregar dispositivos BT vinculados no detectados
@@ -283,21 +288,24 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
       if (seen.contains(addr.toLowerCase())) continue;
       seen.add(addr.toLowerCase());
 
-      devices.add(AudioDevice(
-        id: 'bt-bonded-$addr-out',
-        name: name,
-        isInput: false,
-        isOutput: true,
-        typeLabel: 'Bluetooth',
-        isConnected: isConnected,
-      ));
+      devices.add(
+        AudioDevice(
+          id: 'bt-bonded-$addr-out',
+          name: name,
+          isInput: false,
+          isOutput: true,
+          typeLabel: 'Bluetooth',
+          isConnected: isConnected,
+        ),
+      );
     }
 
     // Limitar a 15 dispositivos máx
     final list = devices.take(15).toList();
     final previousSelection = state.selectedOutputId;
     final selectedInput = state.selectedInputId;
-    final keepManualSelection = state.hasManualOutputSelection &&
+    final keepManualSelection =
+        state.hasManualOutputSelection &&
         list.any((d) => d.isOutput && d.id == previousSelection);
 
     final inferredOutput = _resolvePreferredOutputId(list);
@@ -321,7 +329,14 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
 
   void _fallbackDevices() {
     final devices = <AudioDevice>[
-      const AudioDevice(id: 'builtin-mic', name: 'Micrófono integrado', isInput: true, isOutput: false, typeLabel: 'Integrado', isConnected: true),
+      const AudioDevice(
+        id: 'builtin-mic',
+        name: 'Micrófono integrado',
+        isInput: true,
+        isOutput: false,
+        typeLabel: 'Integrado',
+        isConnected: true,
+      ),
     ];
 
     for (final b in _bondedDevices) {
@@ -330,14 +345,16 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
       final isConnected = b['connected'] as bool? ?? false;
       final name = rawName.isNotEmpty ? rawName : addr;
       if (addr.isEmpty) continue;
-      devices.add(AudioDevice(
-        id: 'bt-bonded-$addr-out',
-        name: name,
-        isInput: false,
-        isOutput: true,
-        typeLabel: 'Bluetooth',
-        isConnected: isConnected,
-      ));
+      devices.add(
+        AudioDevice(
+          id: 'bt-bonded-$addr-out',
+          name: name,
+          isInput: false,
+          isOutput: true,
+          typeLabel: 'Bluetooth',
+          isConnected: isConnected,
+        ),
+      );
     }
 
     final btOutput = devices.cast<AudioDevice?>().firstWhere(
@@ -391,7 +408,8 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
     };
   }
 
-  String _cleanName(String raw) => raw.replaceAll(RegExp(r'\[.*?\]'), '').trim();
+  String _cleanName(String raw) =>
+      raw.replaceAll(RegExp(r'\[.*?\]'), '').trim();
 
   @override
   void dispose() {
@@ -401,6 +419,7 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
   }
 }
 
-final audioDevicesProvider = StateNotifierProvider<AudioDeviceNotifier, AudioDevicesState>((ref) {
-  return AudioDeviceNotifier();
-});
+final audioDevicesProvider =
+    StateNotifierProvider<AudioDeviceNotifier, AudioDevicesState>((ref) {
+      return AudioDeviceNotifier();
+    });

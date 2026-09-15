@@ -15,7 +15,7 @@ class CloudSttRecognizer {
   Future<String> recognize(
     List<int> pcmData,
     String languageCode, {
-    Duration timeout = const Duration(seconds: 8),
+    Duration timeout = const Duration(seconds: 6),
   }) async {
     if (!ApiConstants.hasSttKey) {
       throw const ServerException(
@@ -24,9 +24,9 @@ class CloudSttRecognizer {
     }
 
     final base64Audio = base64Encode(pcmData);
-    final uri = Uri.parse(ApiConstants.sttEndpoint).replace(
-      queryParameters: {'key': ApiConstants.sttApiKey},
-    );
+    final uri = Uri.parse(
+      ApiConstants.sttEndpoint,
+    ).replace(queryParameters: {'key': ApiConstants.sttApiKey});
 
     final response = await _http
         .post(
@@ -37,7 +37,9 @@ class CloudSttRecognizer {
               'encoding': 'LINEAR16',
               'sampleRateHertz': 16000,
               'languageCode': _mapLanguage(languageCode),
-              'model': 'latest_long',
+              // Los bloques duran como máximo 3,2 s; latest_short está
+              // optimizado para frases breves y responde antes que long.
+              'model': 'latest_short',
               'enableAutomaticPunctuation': true,
               'maxAlternatives': 1,
             },
@@ -73,9 +75,18 @@ class CloudSttRecognizer {
 
   String _mapLanguage(String code) {
     const map = {
-      'es': 'es-ES', 'en': 'en-US', 'pt': 'pt-BR', 'fr': 'fr-FR',
-      'de': 'de-DE', 'it': 'it-IT', 'ja': 'ja-JP', 'zh': 'zh-CN',
-      'ko': 'ko-KR', 'ru': 'ru-RU', 'ar': 'ar-SA', 'nl': 'nl-NL',
+      'es': 'es-ES',
+      'en': 'en-US',
+      'pt': 'pt-BR',
+      'fr': 'fr-FR',
+      'de': 'de-DE',
+      'it': 'it-IT',
+      'ja': 'ja-JP',
+      'zh': 'zh-CN',
+      'ko': 'ko-KR',
+      'ru': 'ru-RU',
+      'ar': 'ar-SA',
+      'nl': 'nl-NL',
     };
     return map[code] ?? 'en-US';
   }

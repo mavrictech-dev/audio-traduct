@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Micrófono -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Necesario para seleccionar rutas de entrada/salida y activar HFP/SCO. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Internet -->
     <uses-permission android:name="android.permission.INTERNET" />
 

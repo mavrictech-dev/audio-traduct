@@ -33,6 +33,11 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
+            // La reducción R8 agota la memoria al procesar los modelos y
+            // binarios nativos incluidos. Desactivarla no cambia funciones;
+            // únicamente deja un APK de instalación un poco más grande.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles("proguard-rules.pro")
         }
     }

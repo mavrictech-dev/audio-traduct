@@ -9,7 +9,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
 import android.media.*
 import android.os.Build
 import android.os.Handler
@@ -41,9 +40,10 @@ class MainActivity : FlutterActivity() {
     private var lastCommDevice: AudioDeviceInfo? = null
     private var selectedOutputAddress: String? = null
     private var selectedOutputName: String? = null
-    // La entrada queda separada de la salida: un auricular Bluetooth puede
-    // seguir siendo parlante mientras se usa el micrófono del teléfono.
+    // La entrada se selecciona de forma explícita. En Bluetooth clásico,
+    // Android puede acoplarla a la salida HFP del mismo dispositivo.
     private var selectedInputId: String = "builtin-mic"
+    private var selectedInputName: String? = null
     private val btStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             try {
@@ -163,7 +163,11 @@ class MainActivity : FlutterActivity() {
     /// integrado se estabiliza para que el valor sobreviva a un refresh.
     private fun getInputDevices(): List<Map<String, String>> {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        return audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+        val result = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            // En Bluetooth clásico la fuente SCO puede no existir hasta que
+            // activamos la ruta de comunicación. Se publica abajo usando su
+            // dispositivo sink de availableCommunicationDevices.
+            .filter { device -> device.type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
             .map { device ->
                 mapOf(
                     "id" to inputId(device),
@@ -172,7 +176,39 @@ class MainActivity : FlutterActivity() {
                     "type" to inputTypeLabel(device.type),
                 )
             }
-            .distinctBy { it["id"] }
+            .toMutableList()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.availableCommunicationDevices
+                .filter { device -> isBluetoothCommunicationDevice(device) }
+                .forEach { device ->
+                    val name = device.productName?.toString()?.trim()
+                        ?.takeIf { it.isNotEmpty() } ?: "Micrófono Bluetooth"
+                    result.add(
+                        mapOf(
+                            "id" to "comm-${device.id}",
+                            "name" to name,
+                            "type" to bluetoothTypeLabel(device.type),
+                        )
+                    )
+                }
+        } else {
+            // En Android 11 o anterior SCO se activa con startBluetoothSco.
+            audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+                .filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+                .forEach { device ->
+                    result.add(
+                        mapOf(
+                            "id" to inputId(device),
+                            "name" to (device.productName?.toString()?.trim()
+                                ?.takeIf { it.isNotEmpty() } ?: "Micrófono Bluetooth"),
+                            "type" to "Bluetooth clásico",
+                        )
+                    )
+                }
+        }
+
+        return result.distinctBy { "${it["name"]}|${it["type"]}" }
     }
 
     private fun inputId(device: AudioDeviceInfo): String =
@@ -186,6 +222,7 @@ class MainActivity : FlutterActivity() {
         AudioDeviceInfo.TYPE_USB_DEVICE,
         AudioDeviceInfo.TYPE_USB_HEADSET -> "Micrófono USB"
         AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Micrófono Bluetooth"
+        AudioDeviceInfo.TYPE_BLE_HEADSET -> "Micrófono Bluetooth LE"
         else -> "Micrófono externo"
     }
 
@@ -195,40 +232,108 @@ class MainActivity : FlutterActivity() {
         AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "Cable"
         AudioDeviceInfo.TYPE_USB_DEVICE,
         AudioDeviceInfo.TYPE_USB_HEADSET -> "USB"
-        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth clásico"
+        AudioDeviceInfo.TYPE_BLE_HEADSET -> "Bluetooth LE"
         else -> "Externo"
+    }
+
+    private fun bluetoothTypeLabel(type: Int): String =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            type == AudioDeviceInfo.TYPE_BLE_HEADSET
+        ) "Bluetooth LE" else "Bluetooth clásico"
+
+    private fun isBluetoothCommunicationDevice(device: AudioDeviceInfo): Boolean {
+        if (device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) return true
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            device.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+    }
+
+    private fun selectedCommunicationDevice(): AudioDeviceInfo? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            !selectedInputId.startsWith("comm-")
+        ) return null
+        val requestedId = selectedInputId.removePrefix("comm-").toIntOrNull()
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        return audioManager.availableCommunicationDevices.firstOrNull { device ->
+            device.id == requestedId && isBluetoothCommunicationDevice(device)
+        }
+    }
+
+    private fun isBluetoothInputSelected(): Boolean {
+        if (selectedInputId.startsWith("comm-")) return true
+        return selectedInputDevice()?.let { device ->
+            device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    device.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
+        } ?: false
     }
 
     private fun selectedInputDevice(): AudioDeviceInfo? {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val inputs = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+        if (selectedInputId == "builtin-mic") {
+            return inputs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
+        }
+
         return inputs.firstOrNull { inputId(it) == selectedInputId }
-            ?: inputs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
+            ?: selectedInputName?.let { wantedName ->
+                inputs.firstOrNull { device ->
+                    device.productName?.toString()?.trim()
+                        ?.equals(wantedName, ignoreCase = true) == true
+                }
+            }
     }
 
     private fun selectInputDevice(id: String) {
         val requested = id.trim().ifEmpty { "builtin-mic" }
-        val exists = (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
-            .getDevices(AudioManager.GET_DEVICES_INPUTS)
-            .any { inputId(it) == requested }
+        val previousInputId = selectedInputId
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val physical = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .firstOrNull { inputId(it) == requested }
+        val communication = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            requested.startsWith("comm-")) {
+            val commId = requested.removePrefix("comm-").toIntOrNull()
+            audioManager.availableCommunicationDevices.firstOrNull { device ->
+                device.id == commId && isBluetoothCommunicationDevice(device)
+            }
+        } else null
+        val exists = physical != null || communication != null
         selectedInputId = if (exists) requested else "builtin-mic"
+        selectedInputName = (communication ?: physical)
+            ?.productName?.toString()?.trim()
         // AudioRecord aplica preferredDevice de forma más fiable al crearse.
         // Si el usuario cambia de micrófono durante una traducción, recreamos
         // la captura sin cortar el EventChannel que consume Flutter.
-        if (audioRecord != null) {
+        if (audioRecord != null && selectedInputId != previousInputId) {
             rebuildActiveRecordingForSelectedInput()
         } else {
             applySelectedInputRoute()
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun applySelectedInputRoute() {
         if (selectedInputId == "builtin-mic") {
             forceBuiltinMic()
         } else {
-            // AudioRecord recibe la preferencia de entrada sin alterar la
-            // salida seleccionada. Android decide la activación de SCO para
-            // Bluetooth según el dispositivo y la versión del sistema.
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val communicationDevice = selectedCommunicationDevice()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                communicationDevice != null
+            ) {
+                // Android selecciona automáticamente la fuente que acompaña
+                // al sink HFP/LE indicado por setCommunicationDevice.
+                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                audioManager.setCommunicationDevice(communicationDevice)
+            } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
+                isBluetoothInputSelected()
+            ) {
+                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                audioManager.startBluetoothSco()
+                audioManager.isBluetoothScoOn = true
+            }
+
             applyPreferredInputToActiveRecording()
         }
     }
@@ -249,10 +354,14 @@ class MainActivity : FlutterActivity() {
         if (normalizedName.isEmpty() || isBuiltinOutput) {
             selectedOutputAddress = null
             selectedOutputName = null
-            audioManager.mode = AudioManager.MODE_NORMAL
-            audioManager.isSpeakerphoneOn = true
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                audioManager.clearCommunicationDevice()
+            // Una entrada Bluetooth de comunicación controla también su
+            // salida asociada. Limpiarla aquí apagaría el micrófono elegido.
+            if (!isBluetoothInputSelected()) {
+                audioManager.mode = AudioManager.MODE_NORMAL
+                audioManager.isSpeakerphoneOn = true
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    audioManager.clearCommunicationDevice()
+                }
             }
             applyPreferredOutputToAudioTrack()
             scheduleSelectedInputReassertion()
@@ -262,8 +371,10 @@ class MainActivity : FlutterActivity() {
         // Rutear salida al BT seleccionado SIN tocar el dispositivo de entrada.
         // setCommunicationDevice() roba también el micrófono y lo mueve al BT.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            audioManager.mode = AudioManager.MODE_NORMAL
-            audioManager.clearCommunicationDevice()
+            if (!isBluetoothInputSelected()) {
+                audioManager.mode = AudioManager.MODE_NORMAL
+                audioManager.clearCommunicationDevice()
+            }
 
             val allDevices = buildList {
                 addAll(audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList())
@@ -470,9 +581,6 @@ class MainActivity : FlutterActivity() {
                         // real; nunca sobre availableCommunicationDevices.
                         applyPreferredInputToActiveRecording()
 
-                        // El perfil HFP solo se desconecta cuando el usuario eligió
-                        // el micrófono integrado; si eligió Bluetooth lo respetamos.
-                        if (selectedInputId == "builtin-mic") disconnectHeadsetHfp()
                         audioRecord?.startRecording()
                         scheduleSelectedInputReassertion()
 
@@ -546,8 +654,12 @@ class MainActivity : FlutterActivity() {
     }
 
     /// Fuerza el micrófono del teléfono (no toca comm device).
+    @Suppress("DEPRECATION")
     private fun forceBuiltinMic() {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.clearCommunicationDevice()
+        }
         audioManager.isBluetoothScoOn = false
         audioManager.stopBluetoothSco()
         audioManager.mode = AudioManager.MODE_NORMAL
@@ -556,9 +668,9 @@ class MainActivity : FlutterActivity() {
             audioManager.setParameters("BT_SCO=off")
         } catch (_: Exception) {}
 
-        // Cortamos HFP/manos libres para que Android no vuelva a tomar
-        // el micrófono del headset. A2DP puede seguir para salida.
-        disconnectHeadsetHfp()
+        // No desconectamos el perfil HFP: hacerlo sacaba el audífono de la
+        // lista e impedía cambiar después a su micrófono. Detener SCO y
+        // limpiar communicationDevice basta para volver al integrado.
         applyPreferredInputToActiveRecording()
     }
 
@@ -579,9 +691,11 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun buildAudioRecord(bufferSize: Int): AudioRecord {
-        val source = if (isRunningOnEmulator())
-            MediaRecorder.AudioSource.MIC else
-            MediaRecorder.AudioSource.VOICE_RECOGNITION
+        val source = when {
+            isBluetoothInputSelected() -> MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            isRunningOnEmulator() -> MediaRecorder.AudioSource.MIC
+            else -> MediaRecorder.AudioSource.VOICE_RECOGNITION
+        }
         return AudioRecord.Builder()
             .setAudioSource(source)
             .setAudioFormat(
@@ -645,34 +759,6 @@ class MainActivity : FlutterActivity() {
             }
             registerReceiver(btStateReceiver, filter)
             btReceiverRegistered = true
-        } catch (_: Exception) {}
-    }
-
-    /// Desconecta el perfil HFP (manos libres) de todos los headsets BT.
-    /// Así el micrófono vuelve al teléfono manteniendo A2DP para salida.
-    private fun disconnectHeadsetHfp() {
-        // Si no tenemos permiso BLUETOOTH_CONNECT, no podemos interactuar con HFP
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
-                != PackageManager.PERMISSION_GRANTED
-        ) return
-
-        try {
-            val adapter = BluetoothAdapter.getDefaultAdapter() ?: return
-            adapter.getProfileProxy(this, object : BluetoothProfile.ServiceListener {
-                override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
-                    try {
-                        if (profile != BluetoothProfile.HEADSET) return
-                        val headset = proxy as BluetoothHeadset
-                        val devices = headset.connectedDevices
-                        for (device in devices) {
-                            try { headset.stopVoiceRecognition(device) } catch (_: Exception) {}
-                        }
-                    } catch (_: Exception) {}
-                    adapter.closeProfileProxy(BluetoothProfile.HEADSET, proxy)
-                }
-                override fun onServiceDisconnected(profile: Int) {}
-            }, BluetoothProfile.HEADSET)
         } catch (_: Exception) {}
     }
 

@@ -6,7 +6,14 @@ import 'package:audio_traductor/features/translation/domain/entities/translation
 import 'package:audio_traductor/features/translation/domain/entities/translation_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-enum TranslationStatus { idle, listening, translating, playing, error, downloadingModels }
+enum TranslationStatus {
+  idle,
+  listening,
+  translating,
+  playing,
+  error,
+  downloadingModels,
+}
 
 class TranslationState {
   final TranslationStatus status;
@@ -107,6 +114,10 @@ class TranslationNotifier extends StateNotifier<TranslationState> {
     _currentTargetLanguage = targetLanguage;
     _currentVoiceName = voiceName;
     _currentSpeed = speed;
+
+    // Precalentar la voz objetivo mientras se preparan los modelos evita la
+    // pausa perceptible antes de que se lea la primera traducción.
+    unawaited(RealTtsDatasource.instance.warmup(targetLanguage, voiceName));
 
     // Modo micrófono: passthrough directo (sin traducción)
     if (state.micMode) {
@@ -240,19 +251,29 @@ class TranslationNotifier extends StateNotifier<TranslationState> {
 
   Future<void> playParagraph(String paragraphId) async {
     final p = state.paragraphs.firstWhere((p) => p.id == paragraphId);
-    state = state.copyWith(status: TranslationStatus.playing, playingParagraphId: paragraphId);
+    state = state.copyWith(
+      status: TranslationStatus.playing,
+      playingParagraphId: paragraphId,
+    );
 
-    unawaited(RealTtsDatasource.instance.synthesize(
-      text: p.translatedText,
-      voiceName: _currentVoiceName,
-      languageCode: _currentTargetLanguage,
-      speed: _currentSpeed,
-    ).then((_) => _afterPlay()).catchError((_) => _afterPlay()));
+    unawaited(
+      RealTtsDatasource.instance
+          .synthesize(
+            text: p.translatedText,
+            voiceName: _currentVoiceName,
+            languageCode: _currentTargetLanguage,
+            speed: _currentSpeed,
+          )
+          .then((_) => _afterPlay())
+          .catchError((_) => _afterPlay()),
+    );
   }
 
   void _afterPlay() {
     state = state.copyWith(
-      status: state.isStreaming ? TranslationStatus.listening : TranslationStatus.idle,
+      status: state.isStreaming
+          ? TranslationStatus.listening
+          : TranslationStatus.idle,
       playingParagraphId: null,
     );
   }
@@ -292,20 +313,27 @@ class TranslationNotifier extends StateNotifier<TranslationState> {
   }
 }
 
-final translationProvider = StateNotifierProvider<TranslationNotifier, TranslationState>((ref) {
-  return TranslationNotifier();
-});
+final translationProvider =
+    StateNotifierProvider<TranslationNotifier, TranslationState>((ref) {
+      return TranslationNotifier();
+    });
 
 final historyProvider = FutureProvider<List<TranslationSession>>((ref) async {
   final result = await InjectionContainer.getHistory();
   return result.fold((failure) => throw failure, (s) => s);
 });
 
-final deleteSessionProvider = FutureProvider.family<void, String>((ref, id) async {
+final deleteSessionProvider = FutureProvider.family<void, String>((
+  ref,
+  id,
+) async {
   await InjectionContainer.deleteSession(id);
 });
 
 /// [args] es (id de la sesión, nombre nuevo).
-final renameSessionProvider = FutureProvider.family<void, (String, String)>((ref, args) async {
+final renameSessionProvider = FutureProvider.family<void, (String, String)>((
+  ref,
+  args,
+) async {
   await InjectionContainer.renameSession(args.$1, args.$2);
 });
