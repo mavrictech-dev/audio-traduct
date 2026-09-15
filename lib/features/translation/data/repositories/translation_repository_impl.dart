@@ -23,8 +23,8 @@ class TranslationRepositoryImpl implements TranslationRepository {
   List<TranslationParagraph> _paragraphs = [];
   final _uuid = const Uuid();
   int _startTimeMs = 0;
-  String _sourceLanguage = 'es';
-  String _targetLanguage = 'en';
+  String _sourceLanguage = 'en';
+  String _targetLanguage = 'es';
   String _currentSessionId = '';
   String _sessionName = '';
   double _speed = 0.5;

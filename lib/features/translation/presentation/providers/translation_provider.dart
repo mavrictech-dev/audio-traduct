@@ -80,7 +80,7 @@ class TranslationNotifier extends StateNotifier<TranslationState> {
 
   StreamSubscription? _subscription;
   int _counter = 0;
-  String _currentTargetLanguage = 'en';
+  String _currentTargetLanguage = 'es';
   String _currentVoiceName = '';
   double _currentSpeed = 0.5;
   final MicPassthroughService _passthrough = MicPassthroughService();

@@ -13,12 +13,12 @@ class AudioSettings {
   final double speed;
 
   const AudioSettings({
-    this.sourceLanguage = 'es',
-    this.sourceLanguageName = 'Español',
-    this.targetLanguage = 'en',
-    this.targetLanguageName = 'Inglés',
-    this.voiceName = 'en-US-Wavenet-D',
-    this.voiceDisplayName = 'WaveNet (Hombre)',
+    this.sourceLanguage = 'en',
+    this.sourceLanguageName = 'Inglés',
+    this.targetLanguage = 'es',
+    this.targetLanguageName = 'Español',
+    this.voiceName = 'es-ES-Standard-A',
+    this.voiceDisplayName = 'Estándar (Mujer)',
     this.speed = 0.5,
   });
 
@@ -87,5 +87,5 @@ class AudioSettingsNotifier extends StateNotifier<AudioSettings> {
 
 final audioSettingsProvider =
     StateNotifierProvider<AudioSettingsNotifier, AudioSettings>((ref) {
-  return AudioSettingsNotifier();
-});
+      return AudioSettingsNotifier();
+    });

@@ -13,10 +13,10 @@ class AppConstants {
   static const String appVersion = '1.0.0';
 
   // ── idiomas predeterminados ──
-  static const String defaultSourceLanguage = 'es';
-  static const String defaultTargetLanguage = 'en';
-  static const String defaultSourceLanguageName = 'Español';
-  static const String defaultTargetLanguageName = 'Inglés';
+  static const String defaultSourceLanguage = 'en';
+  static const String defaultTargetLanguage = 'es';
+  static const String defaultSourceLanguageName = 'Inglés';
+  static const String defaultTargetLanguageName = 'Español';
 
   // ── audio ──
   static const String defaultVoiceName = 'es-ES-Standard-A';
