@@ -60,6 +60,7 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
   StreamSubscription<Set<a.AudioDevice>>? _deviceSub;
   StreamSubscription<bool>? _btScanSub;
   List<Map<String, dynamic>> _bondedDevices = [];
+  List<Map<String, dynamic>> _inputDevices = [];
 
   AudioDeviceNotifier() : super(const AudioDevicesState()) {
     _init();
@@ -91,12 +92,13 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
         androidAudioFocusGainType: a.AndroidAudioFocusGainType.gain,
       ));
       await _session?.setActive(true);
-      await _forceBuiltinMic();
+    await _selectInputOnPlatform(state.selectedInputId ?? 'builtin-mic');
     } catch (_) {}
   }
 
   Future<void> _loadInitial() async {
     try {
+      _inputDevices = await _getInputDevices();
       final set = await _session?.getDevices() ?? {};
       _updateFromSet(set);
     } catch (_) {
@@ -108,9 +110,26 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
   Future<void> _loadConnectedBT() async {
     // Primero cargar vinculados (no depende de flutter_blue_plus)
     _bondedDevices = await _getBondedDevices();
+    _inputDevices = await _getInputDevices();
 
     final set = await _session?.getDevices() ?? {};
     _updateFromSet(set);
+  }
+
+  /// Android expone las entradas reales (integrado, USB, cable y, cuando el
+  /// sistema lo permite, Bluetooth) a través del canal nativo. audio_session
+  /// no las reporta de forma consistente en todos los fabricantes.
+  Future<List<Map<String, dynamic>>> _getInputDevices() async {
+    try {
+      const channel = MethodChannel('com.audiotraductor/audio');
+      final result = await channel.invokeMethod('getInputDevices');
+      if (result is List) {
+        return List<Map<String, dynamic>>.from(
+          result.map((e) => Map<String, dynamic>.from(e as Map)),
+        );
+      }
+    } catch (_) {}
+    return const [];
   }
 
   /// Obtiene dispositivos BT vinculados (clásico + BLE).
@@ -138,9 +157,16 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
     });
   }
 
-  void selectInput(String id) {
-    state = state.copyWith(selectedInputId: 'builtin-mic');
-    _configureSession();
+  Future<void> selectInput(String id) async {
+    state = state.copyWith(selectedInputId: id);
+    await _selectInputOnPlatform(id);
+  }
+
+  Future<void> _selectInputOnPlatform(String id) async {
+    try {
+      const channel = MethodChannel('com.audiotraductor/audio');
+      await channel.invokeMethod('selectInput', {'id': id});
+    } catch (_) {}
   }
 
   Future<void> selectOutput(String id) async {
@@ -161,7 +187,7 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
         'id': deviceId,
         'type': device?.typeLabel ?? '',
       });
-      await _forceBuiltinMic();
+      await _selectInputOnPlatform(state.selectedInputId ?? 'builtin-mic');
     } catch (_) {}
   }
 
@@ -197,19 +223,45 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
 
   void _updateFromSet(Set<a.AudioDevice> set) {
     final devices = <AudioDevice>[];
-    final seen = <String>{'builtin-mic', 'micrófono integrado'};
+    final seen = <String>{};
 
-    // Siempre el micrófono integrado
-    devices.add(const AudioDevice(id: 'builtin-mic', name: 'Micrófono integrado', isInput: true, isOutput: false, typeLabel: 'Integrado', isConnected: true));
+    // Siempre dejamos disponible el integrado aunque la consulta nativa no
+    // responda (por ejemplo, antes de que el usuario conceda permisos).
+    final nativeInputs = _inputDevices.isEmpty
+        ? const [
+            {
+              'id': 'builtin-mic',
+              'name': 'Micrófono integrado',
+              'type': 'Integrado',
+            },
+          ]
+        : _inputDevices;
+    for (final input in nativeInputs) {
+      final id = input['id']?.toString() ?? '';
+      final name = input['name']?.toString().trim() ?? '';
+      if (id.isEmpty || name.isEmpty) continue;
+      seen.add(id.toLowerCase());
+      devices.add(AudioDevice(
+        id: id,
+        name: name,
+        isInput: true,
+        isOutput: false,
+        typeLabel: input['type']?.toString() ?? 'Externo',
+        isConnected: true,
+      ));
+    }
 
     for (final d in set) {
       final typeStr = d.type.name;
       if (typeStr == 'builtInEarpiece') continue;
+      // Las entradas ya vinieron del canal nativo con sus ids reales. Evita
+      // duplicarlas con el id interno que use audio_session en cada Android.
+      if (d.isInput) continue;
 
       final name = _cleanName(d.name);
       if (name.isEmpty) continue;
-      if (seen.contains(name.toLowerCase())) continue;
-      seen.add(name.toLowerCase());
+      if (seen.contains(d.id.toLowerCase())) continue;
+      seen.add(d.id.toLowerCase());
 
       devices.add(AudioDevice(
         id: d.id,
@@ -244,6 +296,7 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
     // Limitar a 15 dispositivos máx
     final list = devices.take(15).toList();
     final previousSelection = state.selectedOutputId;
+    final selectedInput = state.selectedInputId;
     final keepManualSelection = state.hasManualOutputSelection &&
         list.any((d) => d.isOutput && d.id == previousSelection);
 
@@ -254,7 +307,9 @@ class AudioDeviceNotifier extends StateNotifier<AudioDevicesState> {
 
     state = state.copyWith(
       devices: list,
-      selectedInputId: 'builtin-mic',
+      selectedInputId: list.any((d) => d.isInput && d.id == selectedInput)
+          ? selectedInput
+          : 'builtin-mic',
       selectedOutputId: nextOutputId,
       hasManualOutputSelection: keepManualSelection,
     );

@@ -41,11 +41,13 @@ class MainActivity : FlutterActivity() {
     private var lastCommDevice: AudioDeviceInfo? = null
     private var selectedOutputAddress: String? = null
     private var selectedOutputName: String? = null
+    // La entrada queda separada de la salida: un auricular Bluetooth puede
+    // seguir siendo parlante mientras se usa el micrófono del teléfono.
+    private var selectedInputId: String = "builtin-mic"
     private val btStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             try {
-                forceBuiltinMic()
-                enforceBuiltinMicOnActiveRecording()
+                applySelectedInputRoute()
             } catch (_: Exception) {}
         }
     }
@@ -79,6 +81,14 @@ class MainActivity : FlutterActivity() {
                         val type = call.argument<String>("type") ?: ""
                         selectOutputDevice(name, id, type)
                     } catch (_: Exception) {}
+                    result.success(true)
+                }
+                "getInputDevices" -> {
+                    result.success(getInputDevices())
+                }
+                "selectInput" -> {
+                    val id = call.argument<String>("id") ?: "builtin-mic"
+                    selectInputDevice(id)
                     result.success(true)
                 }
                 "startRecording" -> {
@@ -149,6 +159,80 @@ class MainActivity : FlutterActivity() {
         startActivity(intent)
     }
 
+    /// Entradas reales disponibles para el selector de Flutter. El id del
+    /// integrado se estabiliza para que el valor sobreviva a un refresh.
+    private fun getInputDevices(): List<Map<String, String>> {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        return audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .map { device ->
+                mapOf(
+                    "id" to inputId(device),
+                    "name" to (device.productName?.toString()?.trim()
+                        ?.takeIf { it.isNotEmpty() } ?: inputName(device)),
+                    "type" to inputTypeLabel(device.type),
+                )
+            }
+            .distinctBy { it["id"] }
+    }
+
+    private fun inputId(device: AudioDeviceInfo): String =
+        if (device.type == AudioDeviceInfo.TYPE_BUILTIN_MIC) "builtin-mic"
+        else "input-${device.id}"
+
+    private fun inputName(device: AudioDeviceInfo): String = when (device.type) {
+        AudioDeviceInfo.TYPE_BUILTIN_MIC -> "Micrófono integrado"
+        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "Micrófono con cable"
+        AudioDeviceInfo.TYPE_USB_DEVICE,
+        AudioDeviceInfo.TYPE_USB_HEADSET -> "Micrófono USB"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Micrófono Bluetooth"
+        else -> "Micrófono externo"
+    }
+
+    private fun inputTypeLabel(type: Int): String = when (type) {
+        AudioDeviceInfo.TYPE_BUILTIN_MIC -> "Integrado"
+        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "Cable"
+        AudioDeviceInfo.TYPE_USB_DEVICE,
+        AudioDeviceInfo.TYPE_USB_HEADSET -> "USB"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth"
+        else -> "Externo"
+    }
+
+    private fun selectedInputDevice(): AudioDeviceInfo? {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val inputs = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+        return inputs.firstOrNull { inputId(it) == selectedInputId }
+            ?: inputs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
+    }
+
+    private fun selectInputDevice(id: String) {
+        val requested = id.trim().ifEmpty { "builtin-mic" }
+        val exists = (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+            .getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .any { inputId(it) == requested }
+        selectedInputId = if (exists) requested else "builtin-mic"
+        // AudioRecord aplica preferredDevice de forma más fiable al crearse.
+        // Si el usuario cambia de micrófono durante una traducción, recreamos
+        // la captura sin cortar el EventChannel que consume Flutter.
+        if (audioRecord != null) {
+            rebuildActiveRecordingForSelectedInput()
+        } else {
+            applySelectedInputRoute()
+        }
+    }
+
+    private fun applySelectedInputRoute() {
+        if (selectedInputId == "builtin-mic") {
+            forceBuiltinMic()
+        } else {
+            // AudioRecord recibe la preferencia de entrada sin alterar la
+            // salida seleccionada. Android decide la activación de SCO para
+            // Bluetooth según el dispositivo y la versión del sistema.
+            applyPreferredInputToActiveRecording()
+        }
+    }
+
     /// Captura audio nativo con AudioRecord usando VOICE_RECOGNITION
     private fun selectOutputDevice(name: String, id: String, type: String) {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -171,7 +255,7 @@ class MainActivity : FlutterActivity() {
                 audioManager.clearCommunicationDevice()
             }
             applyPreferredOutputToAudioTrack()
-            scheduleBuiltinMicReassertion()
+            scheduleSelectedInputReassertion()
             return
         }
 
@@ -201,8 +285,8 @@ class MainActivity : FlutterActivity() {
                 selectedOutputName = matched.productName?.toString()?.trim()?.lowercase()
                 audioManager.isSpeakerphoneOn = false
                 applyPreferredOutputToAudioTrack()
-                scheduleBuiltinMicReassertion()
-                rebuildActiveRecordingToBuiltinMic()
+                scheduleSelectedInputReassertion()
+                rebuildActiveRecordingForSelectedInput()
             }
         }
     }
@@ -367,7 +451,7 @@ class MainActivity : FlutterActivity() {
 
     private fun startNativeRecording(messenger: BinaryMessenger) {
         stopNativeRecording()
-        forceBuiltinMic()
+        applySelectedInputRoute()
 
         EventChannel(messenger, "com.audiotraductor/mic").setStreamHandler(
             object : EventChannel.StreamHandler {
@@ -380,17 +464,17 @@ class MainActivity : FlutterActivity() {
                             AudioFormat.ENCODING_PCM_16BIT
                         )
 
-                        audioRecord = buildBuiltinAudioRecord(bufferSize)
+                        audioRecord = buildAudioRecord(bufferSize)
 
-                        // Forzar el mic interno usando DISPOSITIVOS DE ENTRADA.
-                        // preferredDevice de AudioRecord debe apuntar a un input real,
-                        // no a availableCommunicationDevices.
-                        enforceBuiltinMicOnActiveRecording()
+                        // La preferencia se aplica sobre un dispositivo de entrada
+                        // real; nunca sobre availableCommunicationDevices.
+                        applyPreferredInputToActiveRecording()
 
-                        // Desconectar HFP justo antes de arrancar
-                        disconnectHeadsetHfp()
+                        // El perfil HFP solo se desconecta cuando el usuario eligió
+                        // el micrófono integrado; si eligió Bluetooth lo respetamos.
+                        if (selectedInputId == "builtin-mic") disconnectHeadsetHfp()
                         audioRecord?.startRecording()
-                        scheduleBuiltinMicReassertion()
+                        scheduleSelectedInputReassertion()
 
                         val buffer = ByteArray(bufferSize)
                         while (!Thread.currentThread().isInterrupted && audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
@@ -449,8 +533,8 @@ class MainActivity : FlutterActivity() {
             am.isSpeakerphoneOn = false
         }
         // Re-afirmar mic del celular
-        enforceBuiltinMicOnActiveRecording()
-        scheduleBuiltinMicReassertion()
+        applyPreferredInputToActiveRecording()
+        scheduleSelectedInputReassertion()
     }
 
     /// Limpia el comm device (solo API ≥ 31).
@@ -475,7 +559,7 @@ class MainActivity : FlutterActivity() {
         // Cortamos HFP/manos libres para que Android no vuelva a tomar
         // el micrófono del headset. A2DP puede seguir para salida.
         disconnectHeadsetHfp()
-        enforceBuiltinMicOnActiveRecording()
+        applyPreferredInputToActiveRecording()
     }
 
     /// El HAL de audio del Emulador de Android no enruta VOICE_RECOGNITION
@@ -494,7 +578,7 @@ class MainActivity : FlutterActivity() {
             Build.HARDWARE.contains("ranchu")
     }
 
-    private fun buildBuiltinAudioRecord(bufferSize: Int): AudioRecord {
+    private fun buildAudioRecord(bufferSize: Int): AudioRecord {
         val source = if (isRunningOnEmulator())
             MediaRecorder.AudioSource.MIC else
             MediaRecorder.AudioSource.VOICE_RECOGNITION
@@ -511,7 +595,7 @@ class MainActivity : FlutterActivity() {
             .build()
     }
 
-    private fun rebuildActiveRecordingToBuiltinMic() {
+    private fun rebuildActiveRecordingForSelectedInput() {
         val current = audioRecord ?: return
         try {
             val bufferSize = AudioRecord.getMinBufferSize(
@@ -521,34 +605,31 @@ class MainActivity : FlutterActivity() {
             )
             current.stop()
             current.release()
-            audioRecord = buildBuiltinAudioRecord(bufferSize)
-            enforceBuiltinMicOnActiveRecording()
+            audioRecord = buildAudioRecord(bufferSize)
+            applyPreferredInputToActiveRecording()
             audioRecord?.startRecording()
-            scheduleBuiltinMicReassertion()
+            scheduleSelectedInputReassertion()
         } catch (_: Exception) {}
     }
 
-    private fun scheduleBuiltinMicReassertion() {
+    private fun scheduleSelectedInputReassertion() {
         val delays = listOf<Long>(0, 250, 800)
         delays.forEach { delayMs ->
             mainHandler.postDelayed({
                 try {
-                    forceBuiltinMic()
+                    applySelectedInputRoute()
                 } catch (_: Exception) {}
             }, delayMs)
         }
     }
 
-    private fun enforceBuiltinMicOnActiveRecording() {
+    private fun applyPreferredInputToActiveRecording() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         try {
             val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val preferredInput = am.getDevices(AudioManager.GET_DEVICES_INPUTS)
-                .firstOrNull { device ->
-                    device.type == AudioDeviceInfo.TYPE_BUILTIN_MIC
-                }
+            val preferredInput = selectedInputDevice()
             if (preferredInput != null) {
-                // audioRecord?.preferredDevice = preferredInput
+                audioRecord?.preferredDevice = preferredInput
             }
         } catch (_: Exception) {}
     }

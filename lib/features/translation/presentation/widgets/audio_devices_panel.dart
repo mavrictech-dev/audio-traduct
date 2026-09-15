@@ -77,16 +77,30 @@ class _AudioDevicesPanelState extends ConsumerState<AudioDevicesPanel> {
         const Divider(),
 
         // ── Entrada ──
-        _sectionLabel('🎤 Entrada (micro)', theme),
+        _sectionLabel('Micrófono de entrada', theme),
         const SizedBox(height: 6),
-        ...ds.devices
-            .where((d) => d.isInput)
-            .map((d) => _DeviceTile(
-                  device: d,
-                  icon: _iconFor(d.typeLabel),
-                  isSelected: ds.selectedInputId == d.id,
-                  onTap: () => ref.read(audioDevicesProvider.notifier).selectInput(d.id),
-                )),
+        _InputSelector(
+          devices: ds.devices.where((d) => d.isInput).toList(),
+          selectedId: ds.selectedInputId,
+          iconFor: _iconFor,
+          onChanged: (id) => ref.read(audioDevicesProvider.notifier).selectInput(id),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Elegí la fuente que se usará al traducir. Si conectás un micrófono USB, cableado o Bluetooth, tocá actualizar.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            height: 1.35,
+          ),
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () => ref.read(audioDevicesProvider.notifier).refreshDevices(),
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text('Actualizar micrófonos'),
+          ),
+        ),
 
         const SizedBox(height: 16),
 
@@ -169,6 +183,75 @@ class _AudioDevicesPanelState extends ConsumerState<AudioDevicesPanel> {
       'Integrado' => Icons.speaker,
       _ => Icons.devices,
     };
+  }
+}
+
+/// Selector explícito de fuente de captura. Se usa un desplegable en vez de
+/// una lista de tarjetas para que el control siga siendo compacto incluso
+/// cuando Android detecta varias entradas USB o Bluetooth.
+class _InputSelector extends StatelessWidget {
+  final List<AudioDevice> devices;
+  final String? selectedId;
+  final IconData Function(String typeLabel) iconFor;
+  final ValueChanged<String> onChanged;
+
+  const _InputSelector({
+    required this.devices,
+    required this.selectedId,
+    required this.iconFor,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final validSelected = devices.any((device) => device.id == selectedId)
+        ? selectedId
+        : null;
+
+    return DropdownButtonFormField<String>(
+      value: validSelected,
+      isExpanded: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+      decoration: InputDecoration(
+        prefixIcon: Icon(Icons.mic_rounded, color: scheme.primary),
+        hintText: devices.isEmpty
+            ? 'Buscando micrófonos…'
+            : 'Seleccioná un micrófono',
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      ),
+      items: devices
+          .map(
+            (device) => DropdownMenuItem(
+              value: device.id,
+              child: Row(
+                children: [
+                  Icon(iconFor(device.typeLabel), size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      device.name,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    device.typeLabel,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: devices.isEmpty
+          ? null
+          : (id) {
+              if (id != null) onChanged(id);
+            },
+    );
   }
 }
 

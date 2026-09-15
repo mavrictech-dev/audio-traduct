@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
+import 'app_logo.dart';
 import 'brand_assets.dart';
-import 'brand_image.dart';
+import 'package:flutter/material.dart';
 
 /// Crédito de autoría que se muestra al pie de todas las vistas.
 ///
@@ -30,7 +30,6 @@ class MavricFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final brightness = theme.brightness;
     final color = theme.colorScheme.onSurfaceVariant.withValues(alpha: opacity);
 
     return Padding(
@@ -39,16 +38,10 @@ class MavricFooter extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          BrandImage(
-            candidates: [
-              BrandAssets.mavricMarkFor(brightness),
-              BrandAssets.mavricLogoFor(brightness),
-            ],
-            height: markSize,
-            width: markSize,
-            // Sin logo en disco no dibujamos nada: el texto solo ya alcanza.
-            fallback: const SizedBox.shrink(),
-          ),
+          // El arte corporativo puede agregarse después sin romper el pie;
+          // mientras tanto, el logo de Audio Traductor hace visible la marca
+          // en todas las vistas.
+          AppLogo(size: markSize, glow: 0),
           const SizedBox(width: 6),
           Text(
             BrandStrings.developedBy,

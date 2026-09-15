@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:audio_traductor/core/branding/app_logo.dart';
 import 'package:audio_traductor/core/branding/brand_assets.dart';
-import 'package:audio_traductor/core/branding/brand_image.dart';
 import 'package:audio_traductor/core/constants/app_constants.dart';
 import 'package:audio_traductor/core/theme/app_theme.dart';
 import 'package:flutter/material.dart';
@@ -175,9 +174,10 @@ class _SplashScreenState extends State<SplashScreen>
   Widget _background(bool isDark) {
     return Opacity(
       opacity: isDark ? 0.16 : 0.30,
-      child: const BrandImage(
-        candidates: [BrandAssets.splashBackground],
+      child: Image.asset(
+        BrandAssets.splashBackground,
         fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => const SizedBox.shrink(),
       ),
     );
   }
@@ -375,20 +375,20 @@ class _SplashScreenState extends State<SplashScreen>
       ),
       child: Column(
         children: [
-          BrandImage(
-            candidates: [
-              BrandAssets.mavricLogoFor(theme.brightness),
-              BrandAssets.mavricMarkFor(theme.brightness),
-            ],
-            height: 46,
-            fallback: Text(
-              BrandStrings.company,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: 2,
-                color: scheme.onSurface,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const AppLogo(size: 36, glow: 0.35),
+              const SizedBox(width: 10),
+              Text(
+                BrandStrings.company,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                  color: scheme.onSurface,
+                ),
               ),
-            ),
+            ],
           ),
           const SizedBox(height: 10),
           Text(
